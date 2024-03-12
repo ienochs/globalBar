@@ -1,0 +1,72 @@
+---
+title: "gloBarAnalysis"
+author: "ian enochs"
+date: "2024-03-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+library(readxl)
+library(dplyr)
+library(magrittr)
+library(ggplot2)
+library(ggpubr)
+
+#get data
+rootFolder <-getwd() #get root folder
+atlanticBarData_raw <- read_excel(paste(rootFolder,"/data/NCRMP_Atlantic_allBmuData_Oct2023.xlsx",sep=""))#import data
+pacificBarData_raw <- read_excel(paste(rootFolder,"/data/NCRMP_Pacific_allBmuData_Oct2023.xlsx",sep=""))#import data
+allBarData_raw <- atlanticBarData_raw#rbind(atlanticBarData_raw, pacificBarData_raw)
+
+#daysDeployed = 871
+
+allBarData_clean <- allBarData_raw %>% 
+  filter(fate=='SUCCESSFULLY RECOVERED') %>% #remove bars that weren't recovered
+  select(-c(blockDimensions)) #remove unnecessary columns
+
+
+
+
+#standardize data to surface area and days.
+barDataStd <- barData_clean  %>% 
+  #general values
+  mutate(deltaMass_mgcm2y = 1000*(postWeightClean-preWeightEpoxied)/preSA/daysDeployed) %>%  
+  mutate(deltaVol_mm3cm2y = 1000*(postCTVolume-preCTVolume)/preSA/daysDeployed) %>%  
+  mutate(deltaDensity_mgcm3cm2y = 1000*(postCTDensity-preCTDensity)/preSA/daysDeployed) %>%  
+  #macroboring values
+  mutate(macroboringAnnelid_mm3cm2y = -1*1000*erosionAnnelid/preSA/daysDeployed) %>%  
+  mutate(macroboringBivalve_mm3cm2y = -1*1000*erosionBivalve/preSA/daysDeployed) %>%  
+  mutate(macroboringSponge_mm3cm2y = -1*1000*erosionSponge/preSA/daysDeployed) %>%  
+  mutate(macroboringTotal_mm3cm2y = macroboringAnnelid_mm3cm2y + macroboringBivalve_mm3cm2y + macroboringSponge_mm3cm2y) %>%  
+  #accretion values
+  mutate(accretionBivalve_mm3cm2y = 1000*accretionBivalve/preSA/daysDeployed) %>%  
+  mutate(accretionCCA_mm3cm2y = 1000*accretionCCA/preSA/daysDeployed) %>%    
+  mutate(accretionCoral_mm3cm2y = 1000*accretionCoral/preSA/daysDeployed) %>%    
+  mutate(accretionVermetid_mm3cm2y = 1000*accretionVermetid/preSA/daysDeployed) %>%    
+  mutate(accretionTotal_mm3cm2y = accretionBivalve_mm3cm2y + accretionCCA_mm3cm2y + accretionCoral_mm3cm2y + accretionVermetid_mm3cm2y) %>% 
+  #grazing
+  mutate(grazing_mm3cm2y = deltaVol_mm3cm2y-accretionTotal_mm3cm2y-macroboringTotal_mm3cm2y)
+
+
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
