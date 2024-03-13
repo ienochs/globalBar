@@ -7,8 +7,8 @@ output:
   pdf_document: default
 ---
 
-```{r, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE)
 ```
 
 ### GLOBAL BMU Analysis
