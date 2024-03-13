@@ -108,7 +108,7 @@ Historgram of accretion_mm3cm2y values
 
 ## QA/QC of grazing_mm3cm2y
 Tags where grazing_mm3cm2y = "NA":
-```{r checkNAGrazing, echo=FALSE}
+```{r, echo=FALSE}
 allBarData_clean$tagNum[which(is.na(allBarData_clean$grazing_mm3cm2y))]
 ```
 Historgram of grazing_mm3cm2y values
@@ -116,4 +116,42 @@ Historgram of grazing_mm3cm2y values
   ggplot(allBarData_clean, aes(x = grazing_mm3cm2y)) +
   geom_histogram(binwidth = 5, color = "black", fill = "white") +
   labs(title = "Histogram of deltaVolume_mm3cm2y", x = "deltaVolume_mm3cm2y", y = "Frequency")
+```
+
+
+## General trends
+Plot of deltaVolume_mm3cm2y vs. deltaMass_mgcm2y:
+```{r, echo=FALSE}
+
+p <- ggplot(allBarData_clean, aes(x = deltaMass_mgcm2y, y = deltaVolume_mm3cm2y)) +
+  geom_point() +  # Scatterplot
+  geom_smooth(method = "lm", se = TRUE) +  # Regression line
+  theme_minimal()
+
+# Calculate R-squared value
+lm_model_volVsMass <- lm(deltaVolume_mm3cm2y ~ deltaMass_mgcm2y, data = allBarData_clean)
+r_squared_volVsMass <- summary(lm_model_volVsMass)$r.squared
+
+
+p + geom_text(data = subset(allBarData_clean, deltaMass_mgcm2y > 100), aes(label = tagNum), 
+            hjust = -0.1, vjust = -0.5, size = 2)+# Add tag numbers here delta mass is greater than 100
+    geom_text(x = 200, y = -100, label = paste("R^2 =", round(r_squared_volVsMass, 2)), size = 3)# Add R-squared value to the plot
+```
+
+Plot of deltaMass_mgcm2y vs. daysDeployed:
+```{r, echo=FALSE}
+
+p <- ggplot(allBarData_clean, aes(x = daysDeployed, y = deltaMass_mgcm2y)) +
+  geom_point() +  # Scatterplot
+  geom_smooth(method = "lm", se = TRUE) +  # Regression line
+  theme_minimal()
+
+# Calculate R-squared value
+lm_model_massVsDays <- lm(deltaMass_mgcm2y ~ daysDeployed, data = allBarData_clean)
+r_squared_massVsDays <- summary(lm_model_massVsDays)$r.squared
+
+# Add R-squared value to the plot
+p + geom_text(data = subset(allBarData_clean, daysDeployed > 2500), aes(label = tagNum), 
+            hjust = -0.1, vjust = -0.5, size = 2)+# Add tag numbers here where days deployed is greater than 2500
+    geom_text(x = 2500, y = -100, label = paste("R^2 =", round(r_squared_massVsDays, 2)), size = 3)
 ```
