@@ -37,6 +37,9 @@ allBarData_clean <- allBarData_raw %>%
 #standardize data to surface area and days.
 preSA = 24 #cm2 of exterior facing bar in a 2 x 1 x 5 cm block
 allBarData_clean <- allBarData_clean  %>% 
+
+#CHECK IF CORRECT  
+  mutate(grazing = volumeBlockPost-macroboring-volumeBlockPre) %>%  #calculates grazing as volume in block change not including macroboring
   mutate(deltaMass_mgcm2y = 1000*(massCleanPost-massEpoxiedPre)/preSA/yearsDeployed) %>%  
   mutate(deltaVolume_mm3cm2y = 1000*(volumeBlockPost-volumeBlockPre)/preSA/yearsDeployed) %>%  
   mutate(deltaDensity_mgcm3cm2y = 1000*(densityCTPost-densityCTPre)/preSA/yearsDeployed) %>%  
@@ -111,11 +114,16 @@ Tags where grazing_mm3cm2y = "NA":
 ```{r, echo=FALSE}
 allBarData_clean$tagNum[which(is.na(allBarData_clean$grazing_mm3cm2y))]
 ```
+Tags where grazing_mm3cm2y > 0 and list of those values:
+```{r, echo=FALSE}
+allBarData_clean$tagNum[which(allBarData_clean$grazing_mm3cm2y>0)]
+allBarData_clean$grazing_mm3cm2y[which(allBarData_clean$grazing_mm3cm2y>0)]
+```
 Historgram of grazing_mm3cm2y values
 ```{r, echo=FALSE}
   ggplot(allBarData_clean, aes(x = grazing_mm3cm2y)) +
   geom_histogram(binwidth = 5, color = "black", fill = "white") +
-  labs(title = "Histogram of deltaVolume_mm3cm2y", x = "deltaVolume_mm3cm2y", y = "Frequency")
+  labs(title = "Histogram of grazing_mm3cm2y", x = "grazing_mm3cm2y", y = "Frequency")
 ```
 
 
