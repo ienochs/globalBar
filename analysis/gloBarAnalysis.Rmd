@@ -132,7 +132,7 @@ Plot of deltaVolume_mm3cm2y vs. deltaMass_mgcm2y:
 ```{r, echo=FALSE}
 
 p <- ggplot(allBarData_clean, aes(x = deltaMass_mgcm2y, y = deltaVolume_mm3cm2y)) +
-  geom_point() +  # Scatterplot
+  geom_point(aes(color = factor(region))) +  # Scatterplot
   geom_smooth(method = "lm", se = TRUE) +  # Regression line
   theme_minimal()
 
@@ -149,8 +149,8 @@ p + geom_text(data = subset(allBarData_clean, deltaMass_mgcm2y > 100), aes(label
 Plot of deltaMass_mgcm2y vs. daysDeployed:
 ```{r, echo=FALSE}
 
-p <- ggplot(allBarData_clean, aes(x = daysDeployed, y = deltaMass_mgcm2y)) +
-  geom_point() +  # Scatterplot
+plotDeltaMassVsDays <- ggplot(allBarData_clean, aes(x = daysDeployed, y = deltaMass_mgcm2y)) +
+  geom_point(aes(color = factor(region))) +  # Scatterplot
   geom_smooth(method = "lm", se = TRUE) +  # Regression line
   theme_minimal()
 
@@ -159,7 +159,60 @@ lm_model_massVsDays <- lm(deltaMass_mgcm2y ~ daysDeployed, data = allBarData_cle
 r_squared_massVsDays <- summary(lm_model_massVsDays)$r.squared
 
 # Add R-squared value to the plot
-p + geom_text(data = subset(allBarData_clean, daysDeployed > 2500), aes(label = tagNum), 
-            hjust = -0.1, vjust = -0.5, size = 2)+# Add tag numbers here where days deployed is greater than 2500
-    geom_text(x = 2500, y = -100, label = paste("R^2 =", round(r_squared_massVsDays, 2)), size = 3)
+plotDeltaMassVsDays + geom_text(data = subset(allBarData_clean, daysDeployed > 2500), aes(label = tagNum), hjust = -0.1, vjust = -0.5, size = 2)+# Add tag numbers here where days deployed is greater than 2500
+    geom_text(data = subset(allBarData_clean, deltaMass_mgcm2y > 100), aes(label = tagNum), hjust = -0.1, vjust = -0.5, size = 2)+# Add tag numbers here where delta mass is greater than 100
+      geom_text(x = 2500, y = -100, label = paste("R^2 =", round(r_squared_massVsDays, 2)), size = 3)
+```
+
+Boxplots of deltaMass_mgcm2y by region and subregion
+```{r, echo=FALSE}
+
+boxplotMassRegionSubregion_DRTO <- ggplot( subset(allBarData_clean, region == "DRTO"), aes(subRegion,deltaMass_mgcm2y)) +
+  geom_boxplot(color = "black") +  
+  ylim(-200, 100)+
+  geom_hline(yintercept=0, linetype="dashed", color = "red")+
+  theme_minimal()+
+  theme(aspect.ratio=1)+
+  ggtitle("DRTO")
+boxplotMassRegionSubregion_FGB <- ggplot( subset(allBarData_clean, region == "FGB"), aes(subRegion,deltaMass_mgcm2y)) +
+  geom_boxplot(color = "black") +  
+  ylim(-200, 100)+
+  geom_hline(yintercept=0, linetype="dashed", color = "red")+
+  theme_minimal()+
+  theme(aspect.ratio=1)+
+  ggtitle("FGB")
+boxplotMassRegionSubregion_FLK <- ggplot( subset(allBarData_clean, region == "FLK"), aes(subRegion,deltaMass_mgcm2y)) +
+  geom_boxplot(color = "black") +  
+  ylim(-200, 100)+
+  geom_hline(yintercept=0, linetype="dashed", color = "red")+
+  theme_minimal()+
+  theme(aspect.ratio=1/3)+
+  ggtitle("FLK")
+boxplotMassRegionSubregion_PR <- ggplot( subset(allBarData_clean, region == "PR"), aes(subRegion,deltaMass_mgcm2y)) +
+  geom_boxplot(color = "black") +  
+  ylim(-200, 100)+
+  geom_hline(yintercept=0, linetype="dashed", color = "red")+
+  theme_minimal()+
+  ggtitle("PR")
+boxplotMassRegionSubregion_STJ <- ggplot( subset(allBarData_clean, region == "STJ"), aes(subRegion,deltaMass_mgcm2y)) +
+  geom_boxplot(color = "black") +  
+  ylim(-200, 100)+
+  geom_hline(yintercept=0, linetype="dashed", color = "red")+
+  theme_minimal()+
+  ggtitle("STJ")
+boxplotMassRegionSubregion_STT <- ggplot( subset(allBarData_clean, region == "STT"), aes(subRegion,deltaMass_mgcm2y)) +
+  geom_boxplot(color = "black") +  
+  ylim(-200, 100)+
+  geom_hline(yintercept=0, linetype="dashed", color = "red")+
+  theme_minimal()+
+  ggtitle("STT")
+boxplotMassRegionSubregion_STX <- ggplot( subset(allBarData_clean, region == "STX"), aes(subRegion,deltaMass_mgcm2y)) +
+  geom_boxplot(color = "black") +  
+  ylim(-200, 100)+
+  geom_hline(yintercept=0, linetype="dashed", color = "red")+
+  theme_minimal()+
+  ggtitle("STX")
+
+plot_deltaMassRegion_Atlantic <- ggarrange(boxplotMassRegionSubregion_DRTO, boxplotMassRegionSubregion_FGB, boxplotMassRegionSubregion_FLK, boxplotMassRegionSubregion_PR, boxplotMassRegionSubregion_STJ, boxplotMassRegionSubregion_STT, boxplotMassRegionSubregion_STX, ncol = 4, nrow = 2, align = "h")
+plot_deltaMassRegion_Atlantic
 ```
