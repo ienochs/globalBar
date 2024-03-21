@@ -30,9 +30,21 @@ allBarData_raw <- rbind(atlanticBarData_raw, pacificBarData_raw)
 allBarData_clean <- allBarData_raw %>% 
   filter(fate=='SUCCESSFULLY RECOVERED') %>% #remove bars that weren't recovered
   filter(species!='Isopora sp.') %>% #remove bars made of Isopora
+  filter(tagNum != 1022)%>% #remove tag 1022 that was left behind and collected the follow collection period
   select(-c(dimensions,carbMDPre, carbEQPre, carbMDPost,carbEQPre)) %>% #remove unnecessary columns
   mutate(daysDeployed = as.numeric(ymd(dateRecovery) - ymd(dateDeployment))) %>% 
-  mutate(yearsDeployed=daysDeployed/365)
+  mutate(yearsDeployed=daysDeployed/365)%>% 
+  mutate(basin =(case_when(
+    region == "DRTO"  ~ "Atlantic", 
+    region == "FGB" ~ "Atlantic",
+    region == "FLK"  ~ "Atlantic",
+    region == "MARIAN" ~ "Pacific",
+    region == "MHI" ~ "Pacific",
+    region == "PR"  ~ "Atlantic",
+    region == "PRIA"  ~ "Pacific",
+    region == "STJ"  ~ "Atlantic",
+    region == "STT"  ~ "Atlantic",
+    region == "STX"  ~ "Atlantic")))
 
 #standardize data to surface area and days.
 preSA = 24 #cm2 of exterior facing bar in a 2 x 1 x 5 cm block
@@ -48,8 +60,20 @@ allBarData_clean <- allBarData_clean  %>%
   mutate(grazing_mm3cm2y = 1000*grazing/preSA/yearsDeployed)
 ```
 
+## Summary of data
+**Total number of BARs**
+```{r, echo=FALSE}
+nrow(allBarData_clean)
+allBarData_clean %>%
+  group_by(basin) %>%
+  summarise(maxDays = max(daysDeployed), minDays = min(daysDeployed), n = n())
+allBarData_clean %>%
+  group_by(region) %>%
+  summarise(maxDays = max(daysDeployed), minDays = min(daysDeployed), n = n())
+```
+<br><br>
 ## QA/QC of deltaMass_mgcm2y
-**Tags where deltaMass_mgcm2y = "NA":**
+**List tags where deltaMass_mgcm2y = "NA":**
 ```{r, echo=FALSE}
   allBarData_clean$tagNum[which(is.na(allBarData_clean$deltaMass_mgcm2y))]
 ```
@@ -62,7 +86,7 @@ allBarData_clean <- allBarData_clean  %>%
 ```
 
 ## QA/QC of deltaVolume_mm3cm2y
-**Tags where deltaVolume_mm3cm2y = "NA":**
+**List tags where deltaVolume_mm3cm2y = "NA":**
 ```{r, echo=FALSE}
 allBarData_clean$tagNum[which(is.na(allBarData_clean$deltaVolume_mm3cm2y))]
 ```
@@ -75,7 +99,7 @@ allBarData_clean$tagNum[which(is.na(allBarData_clean$deltaVolume_mm3cm2y))]
 ```
 
 ## QA/QC of deltaDensity_mgcm3cm2y
-**Tags where deltaDensity_mgcm3cm2y = "NA":**
+**List tags where deltaDensity_mgcm3cm2y = "NA":**
 ```{r checkNADensity, echo=FALSE}
 allBarData_clean$tagNum[which(is.na(allBarData_clean$deltaDensity_mgcm3cm2y))]
 ```
@@ -89,7 +113,7 @@ allBarData_clean$tagNum[which(is.na(allBarData_clean$deltaDensity_mgcm3cm2y))]
 
 
 ## QA/QC of macroboring_mm3cm2y
-**Tags where macroboring_mm3cm2y = "NA":**
+**List tags where macroboring_mm3cm2y = "NA":**
 ```{r checkNAMacroboring, echo=FALSE}
 allBarData_clean$tagNum[which(is.na(allBarData_clean$macroboring_mm3cm2y))]
 ```
@@ -102,7 +126,7 @@ allBarData_clean$tagNum[which(is.na(allBarData_clean$macroboring_mm3cm2y))]
 ```
 
 ## QA/QC of accretion_mm3cm2y
-**Tags where accretion_mm3cm2y = "NA":**
+**List tags where accretion_mm3cm2y = "NA":**
 ```{r checkNAAccretion, echo=FALSE}
 allBarData_clean$tagNum[which(is.na(allBarData_clean$accretion_mm3cm2y))]
 ```
@@ -116,12 +140,12 @@ allBarData_clean$tagNum[which(is.na(allBarData_clean$accretion_mm3cm2y))]
 
 ## QA/QC of grazing_mm3cm2y
 <br><br>
-**Tags where grazing_mm3cm2y = "NA":**
+**List tags where grazing_mm3cm2y = "NA":**
 ```{r, echo=FALSE}
 allBarData_clean$tagNum[which(is.na(allBarData_clean$grazing_mm3cm2y))]
 ```
 <br><br>
-**Tags where grazing_mm3cm2y > 0 and list of those values:**
+**List tags where grazing_mm3cm2y > 0 and list of those values:**
 ```{r, echo=FALSE}
 allBarData_clean$tagNum[which(allBarData_clean$grazing_mm3cm2y>0)]
 allBarData_clean$grazing_mm3cm2y[which(allBarData_clean$grazing_mm3cm2y>0)]
@@ -168,7 +192,7 @@ r_squared_massVsDays <- summary(lm_model_massVsDays)$r.squared
 # Add R-squared value to the plot
 plotDeltaMassVsDays + geom_text(data = subset(allBarData_clean, daysDeployed > 2500), aes(label = tagNum), hjust = -0.1, vjust = -0.5, size = 2)+# Add tag numbers here where days deployed is greater than 2500
     geom_text(data = subset(allBarData_clean, deltaMass_mgcm2y > 100), aes(label = tagNum), hjust = -0.1, vjust = -0.5, size = 2)+# Add tag numbers here where delta mass is greater than 100
-      geom_text(x = 2500, y = -100, label = paste("R^2 =", round(r_squared_massVsDays, 2)), size = 3)
+      geom_text(x = 2000, y = 100, label = paste("R^2 =", round(r_squared_massVsDays, 2)), size = 3)
 ```
 <br><br>
 **Grazing vs. Accretion <br>**
