@@ -1,10 +1,12 @@
 ---
 title: "gloBarAnalysis"
 author: "ian enochs"
-date: "2024-03-10"
+date: "`r Sys.Date()`"
 output:
   html_document: default
   pdf_document: default
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
@@ -21,6 +23,20 @@ library(magrittr)
 library(ggplot2)
 library(ggpubr)
 library(lubridate)
+
+# Get your favorite anesthetics predefined for all plots, so you do not have to do define it individually for each one (but call "MyTheme" when you want to apply it). This is mine:
+MyTheme<-theme_bw() +  
+theme(legend.position="top",
+          plot.background=element_blank(),
+          #axis.text.x = element_text(angle = 90, vjust = 0.5),
+          panel.grid.major.y = element_blank(),
+          panel.grid.major.x = element_blank(),
+          panel.grid.minor.x = element_blank(),
+          panel.grid.minor.y = element_blank(),
+          legend.box.background = element_rect(),
+          legend.title = element_blank(),
+          panel.background =element_rect(fill = NA, 
+                                         color = "black"))#
 
 #get data
 rootFolder <-getwd() #get root folder
@@ -196,6 +212,50 @@ plotDeltaMassVsDays + geom_text(data = subset(allBarData_clean, daysDeployed > 2
       geom_text(x = 2000, y = 100, label = paste("R^2 =", round(r_squared_massVsDays, 2)), size = 3)
 ```
 <br><br>
+**Plot of macroboring_mm3cm2y vs. daysDeployed:**
+```{r, echo=FALSE}
+# Calculate R-squared value
+lm_model_macroboringVsDays <- lm(macroboring_mm3cm2y ~ daysDeployed, data = allBarData_clean)
+r_squared_macroboringVsDays <- summary(lm_model_macroboringVsDays)$r.squared
+
+plotMacroboringVsDays <- ggplot(allBarData_clean, aes(x = daysDeployed, y = macroboring_mm3cm2y)) +
+  geom_point(aes(color = factor(region))) +  # Scatterplot
+  geom_smooth(method = "lm", se = TRUE) +  # Regression line
+  theme_minimal()+
+  geom_text(x = 2000, y = -30, label = paste("R^2 =", round(r_squared_macroboringVsDays, 2)), size = 3)
+plotMacroboringVsDays
+```
+<br><br>
+**Plot of grazing_mm3cm2y vs. daysDeployed:**
+```{r, echo=FALSE}
+# Calculate R-squared value
+lm_model_grazingVsDays <- lm(grazing_mm3cm2y ~ daysDeployed, data = allBarData_clean)
+r_squared_grazingVsDays <- summary(lm_model_grazingVsDays)$r.squared
+
+plotGrazingVsDays <- ggplot(allBarData_clean, aes(x = daysDeployed, y = grazing_mm3cm2y)) +
+  geom_point(aes(color = factor(region))) +  # Scatterplot
+  geom_smooth(method = "lm", se = TRUE) +  # Regression line
+  theme_minimal()+
+  geom_text(x = 2000, y = -75, label = paste("R^2 =", round(r_squared_grazingVsDays, 2)), size = 3)
+plotGrazingVsDays
+```
+<br><br>
+**Plot of accretion_mm3cm2y vs. daysDeployed:**
+```{r, echo=FALSE}
+# Calculate R-squared value
+lm_model_accretionVsDays <- lm(accretion_mm3cm2y ~ daysDeployed, data = allBarData_clean)
+r_squared_accretionVsDays <- summary(lm_model_accretionVsDays)$r.squared
+
+plotAccretionVsDays <- ggplot(allBarData_clean, aes(x = daysDeployed, y = accretion_mm3cm2y)) +
+  geom_point(aes(color = factor(region))) +  # Scatterplot
+  geom_smooth(method = "lm", se = TRUE) +  # Regression line
+  theme_minimal()+
+  geom_text(x = 2000, y = 100, label = paste("R^2 =", round(r_squared_accretionVsDays, 2)), size = 3)
+plotAccretionVsDays
+```
+<br><br>
+
+
 **Grazing vs. Accretion <br>**
 ```{r, echo=FALSE}
 
@@ -205,7 +265,6 @@ grazingVsAccretion <- ggplot(allBarData_clean, aes(x = accretion_mm3cm2y, y = gr
   theme_minimal()
 grazingVsAccretion
 ```
-
 
 <br><br>
 **deltaMass_mgcm2y vs. grazing_mm3cm2y <br>**
@@ -250,225 +309,61 @@ deltaMassGrazingStatsPlot
 **deltaMass_mgcm2y boxplots by region and subregion**
 ```{r, echo=FALSE}
 allBarData_clean$subRegion <- factor(allBarData_clean$subRegion, levels = c("north", "east", "south", "west", "upper","middle","lower"))
-boxplotMassRegionSubregion_DRTO <- ggplot( subset(allBarData_clean, region == "DRTO"), aes(subRegion,deltaMass_mgcm2y)) +
-  geom_boxplot(width = 0.2, color = "black") +  
-  ylim(-200, 100)+
+allBarData_clean$subRegion2 <- paste(allBarData_clean$region, allBarData_clean$subRegion,sep="-")
+
+plot_deltaMassRegion_Atlantic <- ggplot(data=allBarData_clean[!is.na(allBarData_clean$subRegion),],
+                                    aes(x=region, fill=subRegion2,
+                                        y=deltaMass_mgcm2y)) +
+  geom_boxplot(#width = 0.5, color = "black",
+               position = position_dodge2(preserve = "single")) +
   geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL)+
-  ggtitle("Dry Tortugas")
-boxplotMassRegionSubregion_FGB <- ggplot( subset(allBarData_clean, region == "FGB"), aes(subRegion,deltaMass_mgcm2y)) +
-  geom_boxplot(width = 0.2, color = "black") +  
-  ylim(-200, 100)+
-  geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL, y = NULL)+
-  ggtitle("FGB")
-boxplotMassRegionSubregion_FLK <- ggplot( subset(allBarData_clean, region == "FLK"), aes(subRegion,deltaMass_mgcm2y)) +
-  geom_boxplot(width = 0.5, color = "black") +  
-  ylim(-200, 100)+
-  geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL, y = NULL)+
-  ggtitle("Florida Keys")
-boxplotMassRegionSubregion_PR <- ggplot( subset(allBarData_clean, region == "PR"), aes(subRegion,deltaMass_mgcm2y)) +
-  geom_boxplot(color = "black") +  
-  ylim(-200, 100)+
-  geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL, y = NULL)+
-  ggtitle("Puerto Rico")
-boxplotMassRegionSubregion_STJ <- ggplot( subset(allBarData_clean, region == "STJ"), aes(subRegion,deltaMass_mgcm2y)) +
-  geom_boxplot(color = "black") +  
-  ylim(-200, 100)+
-  geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL)+
-  ggtitle("St. John")
-boxplotMassRegionSubregion_STT <- ggplot( subset(allBarData_clean, region == "STT"), aes(subRegion,deltaMass_mgcm2y)) +
-  geom_boxplot(color = "black") +  
-  ylim(-200, 100)+
-  geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL, y = NULL)+
-  ggtitle("St. Thomas")
-boxplotMassRegionSubregion_STX <- ggplot( subset(allBarData_clean, region == "STX"), aes(subRegion,deltaMass_mgcm2y)) +
-  geom_boxplot(color = "black") +  
-  ylim(-200, 100)+
-  geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL, y = NULL)+
-  ggtitle("St. Croix")
-plot_massRegion_Atlantic <- ggarrange(boxplotMassRegionSubregion_DRTO, boxplotMassRegionSubregion_FGB, boxplotMassRegionSubregion_FLK, boxplotMassRegionSubregion_PR, boxplotMassRegionSubregion_STJ, boxplotMassRegionSubregion_STT, boxplotMassRegionSubregion_STX, ncol = 4, nrow = 2, align = "h")
-plot_massRegion_Atlantic
+  #facet_wrap(~region, scales = "free_x") + MyTheme +
+  scale_y_continuous(name=(expression(~Delta~mass~(mg~cm^-2~y^-1))))+
+  scale_x_discrete(name="")+MyTheme
+plot_deltaMassRegion_Atlantic
 ```
 <br><br>
 **Macroboring boxplots by region and subregion**
 ```{r, echo=FALSE}
-allBarData_clean$subRegion <- factor(allBarData_clean$subRegion, levels = c("north", "east", "south", "west", "upper","middle","lower"))
-boxplotMacroboringRegionSubregion_DRTO <- ggplot( subset(allBarData_clean, region == "DRTO"), aes(subRegion,macroboring_mm3cm2y)) +
-  geom_boxplot(width = 0.2, color = "black") +  
-  ylim(-70, 0)+
+plot_macroboringRegion_Atlantic <- ggplot(data=allBarData_clean[!is.na(allBarData_clean$subRegion),],
+                                    aes(x=region, fill=subRegion2,
+                                        y=macroboring_mm3cm2y)) +
+  geom_boxplot(#width = 0.5, color = "black",
+               position = position_dodge2(preserve = "single")) +
   geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL)+
-  ggtitle("Dry Tortugas")
-boxplotMacroboringRegionSubregion_FGB <- ggplot( subset(allBarData_clean, region == "FGB"), aes(subRegion,macroboring_mm3cm2y)) +
-  geom_boxplot(width = 0.2, color = "black") +  
-  ylim(-70, 0)+
-  geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL, y = NULL)+
-  ggtitle("FGB")
-boxplotMacroboringRegionSubregion_FLK <- ggplot( subset(allBarData_clean, region == "FLK"), aes(subRegion,macroboring_mm3cm2y)) +
-  geom_boxplot(width = 0.5, color = "black") +  
-  ylim(-70, 0)+
-  geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL, y = NULL)+
-  ggtitle("Florida Keys")
-boxplotMacroboringRegionSubregion_PR <- ggplot( subset(allBarData_clean, region == "PR"), aes(subRegion,macroboring_mm3cm2y)) +
-  geom_boxplot(color = "black") +  
-  ylim(-70, 0)+
-  geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL, y = NULL)+
-  ggtitle("Puerto Rico")
-boxplotMacroboringRegionSubregion_STJ <- ggplot( subset(allBarData_clean, region == "STJ"), aes(subRegion,macroboring_mm3cm2y)) +
-  geom_boxplot(color = "black") +  
-  ylim(-70, 0)+
-  geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL)+
-  ggtitle("St. John")
-boxplotMacroboringRegionSubregion_STT <- ggplot( subset(allBarData_clean, region == "STT"), aes(subRegion,macroboring_mm3cm2y)) +
-  geom_boxplot(color = "black") +  
-  ylim(-70, 0)+
-  geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL, y = NULL)+
-  ggtitle("St. Thomas")
-boxplotMacroboringRegionSubregion_STX <- ggplot( subset(allBarData_clean, region == "STX"), aes(subRegion,macroboring_mm3cm2y)) +
-  geom_boxplot(color = "black") +  
-  ylim(-70, 0)+
-  geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL, y = NULL)+
-  ggtitle("St. Croix")
-plot_macroboringRegion_Atlantic <- ggarrange(boxplotMacroboringRegionSubregion_DRTO, boxplotMacroboringRegionSubregion_FGB, boxplotMacroboringRegionSubregion_FLK, boxplotMacroboringRegionSubregion_PR, boxplotMacroboringRegionSubregion_STJ, boxplotMacroboringRegionSubregion_STT, boxplotMacroboringRegionSubregion_STX, ncol = 4, nrow = 2, align = "h")
+  #facet_wrap(~region, scales = "free_x") + MyTheme +
+  scale_y_continuous(name=(expression(~Delta~volume~(mm^3~cm^-2~y^-1))))+
+  scale_x_discrete(name="")+MyTheme
 plot_macroboringRegion_Atlantic
 ```
 <br><br>
 **Grazing boxplots by region and subregion<br>**
 *Note that the initial volumes are missing for some USVI and PR data, thereby removing some of those grazing values.
 ```{r, echo=FALSE}
-allBarData_clean$subRegion <- factor(allBarData_clean$subRegion, levels = c("north", "east", "south", "west", "upper","middle","lower"))
-boxplotGrazingRegionSubregion_DRTO <- ggplot( subset(allBarData_clean, region == "DRTO"), aes(subRegion,grazing_mm3cm2y)) +
-  geom_boxplot(width = 0.2, color = "black") +  
-  ylim(-200, 0)+
+plot_grazingRegion_Atlantic <- ggplot(data=allBarData_clean[!is.na(allBarData_clean$subRegion),],
+                                    aes(x=region, fill=subRegion2,
+                                        y=grazing_mm3cm2y)) +
+  geom_boxplot(#width = 0.5, color = "black",
+               position = position_dodge2(preserve = "single")) +
   geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL)+
-  ggtitle("Dry Tortugas")
-boxplotGrazingRegionSubregion_FGB <- ggplot( subset(allBarData_clean, region == "FGB"), aes(subRegion,grazing_mm3cm2y)) +
-  geom_boxplot(width = 0.2, color = "black") +  
-  ylim(-200, 0)+
-  geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL, y = NULL)+
-  ggtitle("FGB")
-boxplotGrazingRegionSubregion_FLK <- ggplot( subset(allBarData_clean, region == "FLK"), aes(subRegion,grazing_mm3cm2y)) +
-  geom_boxplot(width = 0.5, color = "black") +  
-  ylim(-200, 0)+
-  geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL, y = NULL)+
-  ggtitle("Florida Keys")
-boxplotGrazingRegionSubregion_PR <- ggplot( subset(allBarData_clean, region == "PR"), aes(subRegion,grazing_mm3cm2y)) +
-  geom_boxplot(color = "black") +  
-  ylim(-200, 0)+
-  geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL, y = NULL)+
-  ggtitle("Puerto Rico")
-boxplotGrazingRegionSubregion_STJ <- ggplot( subset(allBarData_clean, region == "STJ"), aes(subRegion,grazing_mm3cm2y)) +
-  geom_boxplot(color = "black") +  
-  ylim(-200, 0)+
-  geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL)+
-  ggtitle("St. John")
-boxplotGrazingRegionSubregion_STT <- ggplot( subset(allBarData_clean, region == "STT"), aes(subRegion,grazing_mm3cm2y)) +
-  geom_boxplot(color = "black") +  
-  ylim(-200, 0)+
-  geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL, y = NULL)+
-  ggtitle("St. Thomas")
-boxplotGrazingRegionSubregion_STX <- ggplot( subset(allBarData_clean, region == "STX"), aes(subRegion,grazing_mm3cm2y)) +
-  geom_boxplot(color = "black") +  
-  ylim(-200, 0)+
-  geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL, y = NULL)+
-  ggtitle("St. Croix")
-plot_grazingRegion_Atlantic <- ggarrange(boxplotGrazingRegionSubregion_DRTO, boxplotGrazingRegionSubregion_FGB, boxplotGrazingRegionSubregion_FLK, boxplotGrazingRegionSubregion_PR, boxplotGrazingRegionSubregion_STJ, boxplotGrazingRegionSubregion_STT, boxplotGrazingRegionSubregion_STX, ncol = 4, nrow = 2, align = "h")
+  #facet_wrap(~region, scales = "free_x") + MyTheme +
+  scale_y_continuous(name=(expression(~Delta~volume~(mm^3~cm^-2~y^-1))))+
+  scale_x_discrete(name="")+MyTheme
 plot_grazingRegion_Atlantic
 ```
 <br><br>
 **Accretion boxplots by region and subregion<br>**
 ```{r, echo=FALSE}
-allBarData_clean$subRegion <- factor(allBarData_clean$subRegion, levels = c("north", "east", "south", "west", "upper","middle","lower"))
-boxplotAccretionRegionSubregion_DRTO <- ggplot( subset(allBarData_clean, region == "DRTO"), aes(subRegion,accretion_mm3cm2y)) +
-  geom_boxplot(width = 0.2, color = "black") +  
-  ylim(0, 80)+
+plot_accretionRegion_Atlantic <- ggplot(data=allBarData_clean[!is.na(allBarData_clean$subRegion),],
+                                    aes(x=region, fill=subRegion2,
+                                        y=accretion_mm3cm2y)) +
+  geom_boxplot(#width = 0.5, color = "black",
+               position = position_dodge2(preserve = "single")) +
   geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL)+
-  ggtitle("Dry Tortugas")
-boxplotAccretionRegionSubregion_FGB <- ggplot( subset(allBarData_clean, region == "FGB"), aes(subRegion,accretion_mm3cm2y)) +
-  geom_boxplot(width = 0.2, color = "black") +  
-  ylim(0, 80)+
-  geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL, y = NULL)+
-  ggtitle("FGB")
-boxplotAccretionRegionSubregion_FLK <- ggplot( subset(allBarData_clean, region == "FLK"), aes(subRegion,accretion_mm3cm2y)) +
-  geom_boxplot(width = 0.5, color = "black") +  
-  ylim(0, 80)+
-  geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL, y = NULL)+
-  ggtitle("Florida Keys")
-boxplotAccretionRegionSubregion_PR <- ggplot( subset(allBarData_clean, region == "PR"), aes(subRegion,accretion_mm3cm2y)) +
-  geom_boxplot(color = "black") +  
-  ylim(0, 80)+
-  geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL, y = NULL)+
-  ggtitle("Puerto Rico")
-boxplotAccretionRegionSubregion_STJ <- ggplot( subset(allBarData_clean, region == "STJ"), aes(subRegion,accretion_mm3cm2y)) +
-  geom_boxplot(color = "black") +  
-  ylim(0, 80)+
-  geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL)+
-  ggtitle("St. John")
-boxplotAccretionRegionSubregion_STT <- ggplot( subset(allBarData_clean, region == "STT"), aes(subRegion,accretion_mm3cm2y)) +
-  geom_boxplot(color = "black") +  
-  ylim(0, 80)+
-  geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL, y = NULL)+
-  ggtitle("St. Thomas")
-boxplotAccretionRegionSubregion_STX <- ggplot( subset(allBarData_clean, region == "STX"), aes(subRegion,accretion_mm3cm2y)) +
-  geom_boxplot(color = "black") +  
-  ylim(0, 80)+
-  geom_hline(yintercept=0, linetype="dashed", color = "red")+
-  theme_minimal()+
-  labs(x = NULL, y = NULL)+
-  ggtitle("St. Croix")
-plot_accretionRegion_Atlantic <- ggarrange(boxplotAccretionRegionSubregion_DRTO, boxplotAccretionRegionSubregion_FGB, boxplotAccretionRegionSubregion_FLK, boxplotAccretionRegionSubregion_PR, boxplotAccretionRegionSubregion_STJ, boxplotAccretionRegionSubregion_STT, boxplotAccretionRegionSubregion_STX, ncol = 4, nrow = 2, align = "h")
+  #facet_wrap(~region, scales = "free_x") + MyTheme +
+  scale_y_continuous(name=(expression(~Delta~volume~(mm^3~cm^-2~y^-1))))+
+  scale_x_discrete(name="")+MyTheme
 plot_accretionRegion_Atlantic
+
 ```
 
