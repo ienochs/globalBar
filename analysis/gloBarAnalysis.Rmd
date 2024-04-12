@@ -72,6 +72,7 @@ allBarData_clean %>%
   summarise(maxDays = max(daysDeployed), minDays = min(daysDeployed), n = n())
 ```
 <br><br>
+
 ## QA/QC of deltaMass_mgcm2y
 **List tags where deltaMass_mgcm2y = "NA":**
 ```{r, echo=FALSE}
@@ -206,7 +207,44 @@ grazingVsAccretion
 ```
 
 
+<br><br>
+**deltaMass_mgcm2y vs. grazing_mm3cm2y <br>**
+```{r, echo=FALSE}
+
+deltaMassVsGrazing <- ggplot(allBarData_clean, aes(x = grazing_mm3cm2y, y = deltaMass_mgcm2y)) +
+  geom_point(aes(color = factor(region))) +  # Scatterplot
+  geom_smooth(method = "lm", se = TRUE) +  # Regression line
+  theme_minimal()
+deltaMassVsGrazing
+
+deltaMassGrazingStats <- allBarData_clean %>%
+  filter(grazing_mm3cm2y != "")%>% #remove blank grazing values
+  filter(region != "STT")%>% #remove STT where only one
+  group_by(siteName) %>%
+  summarise(meanGrazing = mean(grazing_mm3cm2y), sdGrazing = sd(grazing_mm3cm2y), meanDeltaMass = mean(deltaMass_mgcm2y), sdDeltaMass = sd(deltaMass_mgcm2y), region = region, n = n())
+deltaMassGrazingStats
+deltaMassGrazingStatsPlot <- ggplot(deltaMassGrazingStats, aes(x = meanGrazing, y = meanDeltaMass)) +
+  geom_point(aes(color = factor(region))) +  # Scatterplot
+  geom_errorbar(aes(ymin=meanDeltaMass-sdDeltaMass, ymax=meanDeltaMass+sdDeltaMass), width=.1) +
+  geom_errorbar(aes(xmin=meanGrazing-sdGrazing, xmax=meanGrazing+sdGrazing), width=.1) +
+
+  geom_smooth(method = "lm", se = TRUE) +  # Regression line
+  theme_minimal()
+deltaMassGrazingStatsPlot
+
+
+
+```
+
+
+
+
+
 ## Atlantic and Caribbean: 
+
+
+
+
 **deltaMass_mgcm2y boxplots by region and subregion**
 ```{r, echo=FALSE}
 allBarData_clean$subRegion <- factor(allBarData_clean$subRegion, levels = c("north", "east", "south", "west", "upper","middle","lower"))

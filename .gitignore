@@ -27,4 +27,6 @@ vignettes/*.pdf
 **/.directory
 **/.tmp
 
+# Because Ana told me to:
+**/.DS_Store
 
