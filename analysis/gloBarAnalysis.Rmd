@@ -220,14 +220,16 @@ deltaMassVsGrazing
 deltaMassGrazingStats <- allBarData_clean %>%
   filter(grazing_mm3cm2y != "")%>% #remove blank grazing values
   filter(region != "STT")%>% #remove STT where only one
-  group_by(siteName) %>%
-  summarise(meanGrazing = mean(grazing_mm3cm2y), sdGrazing = sd(grazing_mm3cm2y), meanDeltaMass = mean(deltaMass_mgcm2y), sdDeltaMass = sd(deltaMass_mgcm2y), region = region, n = n())
+  group_by(region, siteName) %>%
+  summarise(meanGrazing = mean(grazing_mm3cm2y), sdGrazing = sd(grazing_mm3cm2y), seGrazing = (sd(grazing_mm3cm2y)/sqrt(n())), meanDeltaMass = mean(deltaMass_mgcm2y), sdDeltaMass = sd(deltaMass_mgcm2y), seDeltaMass = (sd(deltaMass_mgcm2y)/sqrt(n())), n = n())
+
+
+
 deltaMassGrazingStats
 deltaMassGrazingStatsPlot <- ggplot(deltaMassGrazingStats, aes(x = meanGrazing, y = meanDeltaMass)) +
-  geom_point(aes(color = factor(region))) +  # Scatterplot
-  geom_errorbar(aes(ymin=meanDeltaMass-sdDeltaMass, ymax=meanDeltaMass+sdDeltaMass), width=.1) +
-  geom_errorbar(aes(xmin=meanGrazing-sdGrazing, xmax=meanGrazing+sdGrazing), width=.1) +
-
+  geom_point(aes(size = 2, color = factor(region))) +  # Scatterplot
+  geom_errorbar(aes(ymin=meanDeltaMass-seDeltaMass, ymax=meanDeltaMass+seDeltaMass), width=.1) +
+  geom_errorbar(aes(xmin=meanGrazing-seGrazing, xmax=meanGrazing+seGrazing), width=.1) +
   geom_smooth(method = "lm", se = TRUE) +  # Regression line
   theme_minimal()
 deltaMassGrazingStatsPlot
