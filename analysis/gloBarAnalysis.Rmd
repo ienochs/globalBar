@@ -301,17 +301,18 @@ deltaMassGrazingStatsPlot
 
 
 
-## Atlantic and Caribbean: 
-
-
-
+## Atlantic and Caribbean:
+```{r, echo=FALSE}
+atlanticBarData_clean <- allBarData_clean %>% 
+  filter(basin =='Atlantic')
+```
 
 **deltaMass_mgcm2y boxplots by region and subregion**
 ```{r, echo=FALSE}
-allBarData_clean$subRegion <- factor(allBarData_clean$subRegion, levels = c("north", "east", "south", "west", "upper","middle","lower"))
-allBarData_clean$subRegion2 <- paste(allBarData_clean$region, allBarData_clean$subRegion,sep="-")
+atlanticBarData_clean$subRegion <- factor(atlanticBarData_clean$subRegion, levels = c("north", "east", "south", "west", "upper","middle","lower"))
+atlanticBarData_clean$subRegion2 <- paste(atlanticBarData_clean$region, atlanticBarData_clean$subRegion,sep="-")
 
-plot_deltaMassRegion_Atlantic <- ggplot(data=allBarData_clean[!is.na(allBarData_clean$subRegion),],
+plot_deltaMassRegion_Atlantic <- ggplot(data=atlanticBarData_clean[!is.na(atlanticBarData_clean$subRegion),],
                                     aes(x=region, fill=subRegion2,
                                         y=deltaMass_mgcm2y)) +
   geom_boxplot(#width = 0.5, color = "black",
@@ -323,9 +324,23 @@ plot_deltaMassRegion_Atlantic <- ggplot(data=allBarData_clean[!is.na(allBarData_
 plot_deltaMassRegion_Atlantic
 ```
 <br><br>
+**deltaVolume_mm3cm2y boxplots by region and subregion**
+```{r, echo=FALSE}
+plot_deltaVolumeRegion_Atlantic <- ggplot(data=atlanticBarData_clean[!is.na(atlanticBarData_clean$subRegion),],
+                                    aes(x=region, fill=subRegion2,
+                                        y=deltaVolume_mm3cm2y)) +
+  geom_boxplot(#width = 0.5, color = "black",
+               position = position_dodge2(preserve = "single")) +
+  geom_hline(yintercept=0, linetype="dashed", color = "red")+
+  #facet_wrap(~region, scales = "free_x") + MyTheme +
+  scale_y_continuous(name=(expression(~Delta~volume~(mm^3~cm^-2~y^-1))))+
+  scale_x_discrete(name="")+MyTheme
+plot_deltaVolumeRegion_Atlantic
+```
+<br><br>
 **Macroboring boxplots by region and subregion**
 ```{r, echo=FALSE}
-plot_macroboringRegion_Atlantic <- ggplot(data=allBarData_clean[!is.na(allBarData_clean$subRegion),],
+plot_macroboringRegion_Atlantic <- ggplot(data=atlanticBarData_clean[!is.na(atlanticBarData_clean$subRegion),],
                                     aes(x=region, fill=subRegion2,
                                         y=macroboring_mm3cm2y)) +
   geom_boxplot(#width = 0.5, color = "black",
@@ -340,7 +355,7 @@ plot_macroboringRegion_Atlantic
 **Grazing boxplots by region and subregion<br>**
 *Note that the initial volumes are missing for some USVI and PR data, thereby removing some of those grazing values.
 ```{r, echo=FALSE}
-plot_grazingRegion_Atlantic <- ggplot(data=allBarData_clean[!is.na(allBarData_clean$subRegion),],
+plot_grazingRegion_Atlantic <- ggplot(data=atlanticBarData_clean[!is.na(atlanticBarData_clean$subRegion),],
                                     aes(x=region, fill=subRegion2,
                                         y=grazing_mm3cm2y)) +
   geom_boxplot(#width = 0.5, color = "black",
@@ -354,7 +369,7 @@ plot_grazingRegion_Atlantic
 <br><br>
 **Accretion boxplots by region and subregion<br>**
 ```{r, echo=FALSE}
-plot_accretionRegion_Atlantic <- ggplot(data=allBarData_clean[!is.na(allBarData_clean$subRegion),],
+plot_accretionRegion_Atlantic <- ggplot(data=atlanticBarData_clean[!is.na(atlanticBarData_clean$subRegion),],
                                     aes(x=region, fill=subRegion2,
                                         y=accretion_mm3cm2y)) +
   geom_boxplot(#width = 0.5, color = "black",
@@ -367,3 +382,31 @@ plot_accretionRegion_Atlantic
 
 ```
 
+
+
+## The vast Pacific: 
+```{r, echo=FALSE}
+pacificBarData_clean <- allBarData_clean %>% 
+  filter(basin =='Pacific')
+
+pacificBarData_clean$subRegion <- substr(pacificBarData_clean$siteName, 5, 7)
+```
+
+
+**deltaMass_mgcm2y boxplots by region and subregion**
+```{r, echo=FALSE}
+pacificBarData_clean$subRegion <- factor(pacificBarData_clean$subRegion, levels = c("FFS", "GUA", "HAW", "JAR", "MAU","OAH","OFU","PAG","PAL","PHR","SAI","TAU","TUT","WAK"))
+pacificBarData_clean$subRegion2 <- paste(pacificBarData_clean$subRegion, pacificBarData_clean$siteName,sep="-")
+
+plot_deltaMassRegion_Pacific <- ggplot(data=pacificBarData_clean[!is.na(pacificBarData_clean$subRegion),],
+                                    aes(x=subRegion, fill=subRegion2,
+                                        y=deltaMass_mgcm2y)) +
+  geom_boxplot(#width = 0.5, color = "black",
+               position = position_dodge2(preserve = "single")) +
+  geom_hline(yintercept=0, linetype="dashed", color = "red")+
+  #facet_wrap(~region, scales = "free_x") + MyTheme +
+  scale_y_continuous(name=(expression(~Delta~mass~(mg~cm^-2~y^-1))))+
+  scale_x_discrete(name="")+MyTheme
+plot_deltaMassRegion_Pacific
+```
+<br><br>
