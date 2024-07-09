@@ -13,7 +13,7 @@ editor_options:
 knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE)
 ```
 
-### GLOBAL BMU Analysis
+## GLOBAL BMU Analysis
 This document was created to analyze NCRMP BMU data
 
 ```{r, echo=FALSE}
@@ -38,7 +38,7 @@ theme(legend.position="top",
           panel.background =element_rect(fill = NA, 
                                          color = "black"))#
 
-#get data
+#get bar data
 rootFolder <-getwd() #get root folder
 atlanticBarData_raw <- read_excel(paste(rootFolder,"/data/NCRMP_Atlantic_allBmuData_March2024.xlsx",sep=""))#import data
 pacificBarData_raw <- read_excel(paste(rootFolder,"/data/NCRMP_Pacific_allBmuData_March2024.xlsx",sep=""))#import data
@@ -66,7 +66,7 @@ allBarData_clean <- allBarData_raw %>%
 preSA = 24 #cm2 of exterior facing bar in a 2 x 1 x 5 cm block
 allBarData_clean <- allBarData_clean  %>% 
 
-#CHECK IF CORRECT  
+#check if correct
   mutate(grazing = volumeBlockPost-macroboring-volumeBlockPre) %>%  #calculates grazing as volume in block change not including macroboring
   mutate(deltaMass_mgcm2y = 1000*(massCleanPost-massEpoxiedPre)/preSA/yearsDeployed) %>%  
   mutate(deltaVolume_mm3cm2y = 1000*(volumeBlockPost-volumeBlockPre)/preSA/yearsDeployed) %>%  
@@ -74,9 +74,14 @@ allBarData_clean <- allBarData_clean  %>%
   mutate(macroboring_mm3cm2y = 1000*macroboring/preSA/yearsDeployed) %>%  
   mutate(accretion_mm3cm2y = 1000*accretion/preSA/yearsDeployed) %>% 
   mutate(grazing_mm3cm2y = 1000*grazing/preSA/yearsDeployed)
-```
 
-## Summary of data
+#get parrot fish data
+atlanticParrotSummaryData_clean <- read.csv(paste(rootFolder,"/data/parrotfish/atlantic/parrotfish_BMUs.csv",sep=""), header=TRUE, sep=",")#import data
+
+```
+<br><br>
+
+## Summary of bar data
 **Total number of BARs**
 ```{r, echo=FALSE}
 nrow(allBarData_clean)
@@ -94,88 +99,92 @@ allBarData_clean %>%
 ```{r, echo=FALSE}
   allBarData_clean$tagNum[which(is.na(allBarData_clean$deltaMass_mgcm2y))]
 ```
-<br><br>
+<br>
 **Historgram of deltaMass_mgcm2y values**
 ```{r, echo=FALSE}
   ggplot(allBarData_clean, aes(x = deltaMass_mgcm2y)) +
   geom_histogram(binwidth = 5, color = "black", fill = "white") +
   labs(title = "Histogram of deltaMass_mgcm2y", x = "deltaMass_mgcm2y", y = "Frequency")
 ```
+<br><br>
 
 ## QA/QC of deltaVolume_mm3cm2y
 **List tags where deltaVolume_mm3cm2y = "NA":**
 ```{r, echo=FALSE}
 allBarData_clean$tagNum[which(is.na(allBarData_clean$deltaVolume_mm3cm2y))]
 ```
-<br><br>
+<br>
 **Historgram of deltaVolume_mm3cm2y values**
 ```{r, echo=FALSE}
   ggplot(allBarData_clean, aes(x = deltaVolume_mm3cm2y)) +
   geom_histogram(binwidth = 5, color = "black", fill = "white") +
   labs(title = "Histogram of deltaVolume_mm3cm2y", x = "deltaVolume_mm3cm2y", y = "Frequency")
 ```
+<br><br>
 
 ## QA/QC of deltaDensity_mgcm3cm2y
 **List tags where deltaDensity_mgcm3cm2y = "NA":**
 ```{r checkNADensity, echo=FALSE}
 allBarData_clean$tagNum[which(is.na(allBarData_clean$deltaDensity_mgcm3cm2y))]
 ```
-<br><br>
+<br>
 **Historgram of deltaDensity_mgcm3cm2y values**
 ```{r, echo=FALSE}
   ggplot(allBarData_clean, aes(x = deltaDensity_mgcm3cm2y)) +
   geom_histogram(binwidth = .1, color = "black", fill = "white") +
   labs(title = "Histogram of deltaDensity_mgcm3cm2y", x = "deltaDensity_mgcm3cm2y", y = "Frequency")
 ```
-
+<br><br>
 
 ## QA/QC of macroboring_mm3cm2y
 **List tags where macroboring_mm3cm2y = "NA":**
 ```{r checkNAMacroboring, echo=FALSE}
 allBarData_clean$tagNum[which(is.na(allBarData_clean$macroboring_mm3cm2y))]
 ```
-<br><br>
+<br>
 **Historgram of macroboring_mm3cm2y values**
 ```{r, echo=FALSE}
   ggplot(allBarData_clean, aes(x = macroboring_mm3cm2y)) +
   geom_histogram(binwidth = 1, color = "black", fill = "white") +
   labs(title = "Histogram of macroboring_mm3cm2y", x = "macroboring_mm3cm2y", y = "Frequency")
 ```
+<br><br>
 
 ## QA/QC of accretion_mm3cm2y
 **List tags where accretion_mm3cm2y = "NA":**
 ```{r checkNAAccretion, echo=FALSE}
 allBarData_clean$tagNum[which(is.na(allBarData_clean$accretion_mm3cm2y))]
 ```
-<br><br>
+<br>
 **Historgram of accretion_mm3cm2y values**
 ```{r, echo=FALSE}
   ggplot(allBarData_clean, aes(x = accretion_mm3cm2y)) +
   geom_histogram(binwidth = 5, color = "black", fill = "white") +
   labs(title = "Histogram of accretion_mm3cm2y", x = "accretion_mm3cm2y", y = "Frequency")
 ```
+<br><br>
 
 ## QA/QC of grazing_mm3cm2y
-<br><br>
 **List tags where grazing_mm3cm2y = "NA":**
 ```{r, echo=FALSE}
 allBarData_clean$tagNum[which(is.na(allBarData_clean$grazing_mm3cm2y))]
 ```
-<br><br>
+<br>
 **List tags where grazing_mm3cm2y > 0 and list of those values:**
 ```{r, echo=FALSE}
 allBarData_clean$tagNum[which(allBarData_clean$grazing_mm3cm2y>0)]
 allBarData_clean$grazing_mm3cm2y[which(allBarData_clean$grazing_mm3cm2y>0)]
 ```
-<br><br>
+<br>
 **Historgram of grazing_mm3cm2y values**
 ```{r, echo=FALSE}
   ggplot(allBarData_clean, aes(x = grazing_mm3cm2y)) +
   geom_histogram(binwidth = 5, color = "black", fill = "white") +
   labs(title = "Histogram of grazing_mm3cm2y", x = "grazing_mm3cm2y", y = "Frequency")
 ```
+<br><br>
 
-## General trends
+## Volume vs. Mass
 **Plot of deltaVolume_mm3cm2y vs. deltaMass_mgcm2y:**
 ```{r, echo=FALSE}
 
@@ -194,6 +203,8 @@ p + geom_text(data = subset(allBarData_clean, deltaMass_mgcm2y > 100), aes(label
     geom_text(x = 200, y = -100, label = paste("R^2 =", round(r_squared_volVsMass, 2)), size = 3)# Add R-squared value to the plot
 ```
 <br><br>
+
+## Parameters vs. time deployed
 **Plot of deltaMass_mgcm2y vs. daysDeployed:**
 ```{r, echo=FALSE}
 
@@ -211,7 +222,7 @@ plotDeltaMassVsDays + geom_text(data = subset(allBarData_clean, daysDeployed > 2
     geom_text(data = subset(allBarData_clean, deltaMass_mgcm2y > 100), aes(label = tagNum), hjust = -0.1, vjust = -0.5, size = 2)+# Add tag numbers here where delta mass is greater than 100
       geom_text(x = 2000, y = 100, label = paste("R^2 =", round(r_squared_massVsDays, 2)), size = 3)
 ```
-<br><br>
+<br>
 **Plot of macroboring_mm3cm2y vs. daysDeployed:**
 ```{r, echo=FALSE}
 # Calculate R-squared value
@@ -225,7 +236,7 @@ plotMacroboringVsDays <- ggplot(allBarData_clean, aes(x = daysDeployed, y = macr
   geom_text(x = 2000, y = -30, label = paste("R^2 =", round(r_squared_macroboringVsDays, 2)), size = 3)
 plotMacroboringVsDays
 ```
-<br><br>
+<br>
 **Plot of grazing_mm3cm2y vs. daysDeployed:**
 ```{r, echo=FALSE}
 # Calculate R-squared value
@@ -239,7 +250,7 @@ plotGrazingVsDays <- ggplot(allBarData_clean, aes(x = daysDeployed, y = grazing_
   geom_text(x = 2000, y = -75, label = paste("R^2 =", round(r_squared_grazingVsDays, 2)), size = 3)
 plotGrazingVsDays
 ```
-<br><br>
+<br>
 **Plot of accretion_mm3cm2y vs. daysDeployed:**
 ```{r, echo=FALSE}
 # Calculate R-squared value
@@ -255,8 +266,35 @@ plotAccretionVsDays
 ```
 <br><br>
 
+## Exploration of grazing and parrotfish
+**Calculation of stats for delta mass grazing**
+```{r, echo=FALSE}
 
-**Grazing vs. Accretion <br>**
+deltaMassGrazingStats <- allBarData_clean %>%
+  filter(grazing_mm3cm2y != "")%>% #remove blank grazing values
+  filter(region != "STT")%>% #remove STT where only one
+  group_by(basin, region, subRegion) %>%
+  summarise(meanGrazing = mean(grazing_mm3cm2y), sdGrazing = sd(grazing_mm3cm2y), seGrazing = (sd(grazing_mm3cm2y)/sqrt(n())), meanDeltaMass = mean(deltaMass_mgcm2y), sdDeltaMass = sd(deltaMass_mgcm2y), seDeltaMass = (sd(deltaMass_mgcm2y)/sqrt(n())), n = n())
+deltaMassGrazingStats$subRegion <- factor(deltaMassGrazingStats$subRegion, levels = c("north", "east", "south", "west", "upper","middle","lower"))
+deltaMassGrazingStats$subRegion2 <- paste(deltaMassGrazingStats$region, deltaMassGrazingStats$subRegion,sep="-")
+
+deltaMassGrazingStats
+```
+<br>
+
+**Atlantic: calculation of stats for parrot fish density and biomass**
+```{r, echo=FALSE}
+
+atlanticParrotStats <- atlanticParrotSummaryData_clean %>%
+  group_by(region, subRegion) %>%
+  summarise(meanDensity_ind_ha = mean(density_ind_ha), sdDensity_ind_ha = sd(density_ind_ha), seDensity_ind_ha = (sd(density_ind_ha)/sqrt(n())), meanBiomass_kg_ha = mean(biomass_kg_ha), sdBiomass_kg_ha = sd(biomass_kg_ha), seBiomass_kg_ha = (sd(biomass_kg_ha)/sqrt(n())), n = n())
+atlanticParrotStats$subRegion <- factor(atlanticParrotStats$subRegion, levels = c("north", "east", "south", "west", "upper","middle","lower"))
+atlanticParrotStats$subRegion2 <- paste(atlanticParrotStats$region, atlanticParrotStats$subRegion,sep="-")
+grazingParrotStats <- inner_join(deltaMassGrazingStats, atlanticParrotStats, by = "subRegion2")
+grazingParrotStats
+```
+<br>
+**Grazing vs. Accretion**
 ```{r, echo=FALSE}
 
 grazingVsAccretion <- ggplot(allBarData_clean, aes(x = accretion_mm3cm2y, y = grazing_mm3cm2y)) +
@@ -265,9 +303,8 @@ grazingVsAccretion <- ggplot(allBarData_clean, aes(x = accretion_mm3cm2y, y = gr
   theme_minimal()
 grazingVsAccretion
 ```
-
-<br><br>
-**deltaMass_mgcm2y vs. grazing_mm3cm2y <br>**
+<br>
+**deltaMass_mgcm2y vs. grazing_mm3cm2y**
 ```{r, echo=FALSE}
 
 deltaMassVsGrazing <- ggplot(allBarData_clean, aes(x = grazing_mm3cm2y, y = deltaMass_mgcm2y)) +
@@ -275,16 +312,10 @@ deltaMassVsGrazing <- ggplot(allBarData_clean, aes(x = grazing_mm3cm2y, y = delt
   geom_smooth(method = "lm", se = TRUE) +  # Regression line
   theme_minimal()
 deltaMassVsGrazing
-
-deltaMassGrazingStats <- allBarData_clean %>%
-  filter(grazing_mm3cm2y != "")%>% #remove blank grazing values
-  filter(region != "STT")%>% #remove STT where only one
-  group_by(basin, region, siteName) %>%
-  summarise(meanGrazing = mean(grazing_mm3cm2y), sdGrazing = sd(grazing_mm3cm2y), seGrazing = (sd(grazing_mm3cm2y)/sqrt(n())), meanDeltaMass = mean(deltaMass_mgcm2y), sdDeltaMass = sd(deltaMass_mgcm2y), seDeltaMass = (sd(deltaMass_mgcm2y)/sqrt(n())), n = n())
-
-
-
-deltaMassGrazingStats
+```
+<br>
+**mean deltaMass_mgcm2y vs. mean grazing_mm3cm2y**
+```{r, echo=FALSE}
 deltaMassGrazingStatsPlot <- ggplot(deltaMassGrazingStats, aes(x = meanGrazing, y = meanDeltaMass)) +
   geom_point(aes(shape = basin, size = 1, color = factor(region))) +  # Scatterplot
   geom_errorbar(aes(ymin=meanDeltaMass-seDeltaMass, ymax=meanDeltaMass+seDeltaMass), width=.1) +
@@ -292,21 +323,57 @@ deltaMassGrazingStatsPlot <- ggplot(deltaMassGrazingStats, aes(x = meanGrazing, 
   geom_smooth(method = "lm", se = TRUE) +  # Regression line
   theme_minimal()
 deltaMassGrazingStatsPlot
+```
+<br>
+**Atlantic: mean parrot biomass_kg_ha vs parrot density_ind_ha**
+```{r, echo=FALSE}
+biomassDensityStatsPlot <- ggplot(grazingParrotStats, aes(x = meanDensity_ind_ha, y = meanBiomass_kg_ha)) +
+  geom_point(aes(size = 1, color = factor(region.x))) +  # Scatterplot
+  geom_errorbar(aes(ymin=meanBiomass_kg_ha-seBiomass_kg_ha, ymax=meanBiomass_kg_ha+seBiomass_kg_ha), width=.1) +
+  geom_errorbar(aes(xmin=meanDensity_ind_ha-seDensity_ind_ha, xmax=meanDensity_ind_ha+seDensity_ind_ha), width=.1) +
+  geom_smooth(method = "lm", se = TRUE) +  # Regression line
+  geom_text(data = grazingParrotStats, aes(label = subRegion2), hjust = -0.1, vjust = -0.5, size = 2)+
 
-
-
+  theme_minimal()
+biomassDensityStatsPlot
+```
+<br>
+**Atlantic: mean grazing vs parrot biomass_kg_ha**
+```{r, echo=FALSE}
+grazingBiomassPlot <- ggplot(grazingParrotStats, aes(x = meanBiomass_kg_ha, y = meanGrazing)) +
+  geom_point(aes(size = 1, color = factor(region.x))) +  # Scatterplot
+  geom_errorbar(aes(ymin=meanGrazing-seGrazing, ymax=meanGrazing+seGrazing), width=.1) +
+  geom_errorbar(aes(xmin=meanBiomass_kg_ha-seBiomass_kg_ha, xmax=meanBiomass_kg_ha+seBiomass_kg_ha), width=.1) +
+  geom_smooth(method = "lm", se = TRUE) +  # Regression line
+  geom_text(data = grazingParrotStats, aes(label = subRegion2), hjust = -0.1, vjust = -0.5, size = 2)+
+  theme_minimal()
+grazingBiomassPlot
+```
+<br>
+**Atlantic: mean grazing vs parrot density_ind_ha**
+```{r, echo=FALSE}
+grazingDensityPlot <- ggplot(grazingParrotStats, aes(x = meanDensity_ind_ha, y = meanGrazing)) +
+  geom_point(aes(size = 1, color = factor(region.x))) +  # Scatterplot
+  geom_errorbar(aes(ymin=meanGrazing-seGrazing, ymax=meanGrazing+seGrazing), width=.1) +
+  geom_errorbar(aes(xmin=meanDensity_ind_ha-seDensity_ind_ha, xmax=meanDensity_ind_ha+seDensity_ind_ha), width=.1) +
+  geom_smooth(method = "lm", se = TRUE) +  # Regression line
+  geom_text(data = grazingParrotStats, aes(label = subRegion2), hjust = -0.1, vjust = -0.5, size = 2)+
+  theme_minimal()
+grazingDensityPlot
 ```
 
 
 
 
 
-## Atlantic and Caribbean:
+<br><br><br><br>
+
+# **Atlantic and Caribbean:**
 ```{r, echo=FALSE}
 atlanticBarData_clean <- allBarData_clean %>% 
   filter(basin =='Atlantic')
 ```
-
+<br>
 **deltaMass_mgcm2y boxplots by region and subregion**
 ```{r, echo=FALSE}
 atlanticBarData_clean$subRegion <- factor(atlanticBarData_clean$subRegion, levels = c("north", "east", "south", "west", "upper","middle","lower"))
@@ -323,7 +390,7 @@ plot_deltaMassRegion_Atlantic <- ggplot(data=atlanticBarData_clean[!is.na(atlant
   scale_x_discrete(name="")+MyTheme
 plot_deltaMassRegion_Atlantic
 ```
-<br><br>
+<br>
 **deltaVolume_mm3cm2y boxplots by region and subregion**
 ```{r, echo=FALSE}
 plot_deltaVolumeRegion_Atlantic <- ggplot(data=atlanticBarData_clean[!is.na(atlanticBarData_clean$subRegion),],
@@ -337,7 +404,7 @@ plot_deltaVolumeRegion_Atlantic <- ggplot(data=atlanticBarData_clean[!is.na(atla
   scale_x_discrete(name="")+MyTheme
 plot_deltaVolumeRegion_Atlantic
 ```
-<br><br>
+<br>
 **Macroboring boxplots by region and subregion**
 ```{r, echo=FALSE}
 plot_macroboringRegion_Atlantic <- ggplot(data=atlanticBarData_clean[!is.na(atlanticBarData_clean$subRegion),],
@@ -351,7 +418,7 @@ plot_macroboringRegion_Atlantic <- ggplot(data=atlanticBarData_clean[!is.na(atla
   scale_x_discrete(name="")+MyTheme
 plot_macroboringRegion_Atlantic
 ```
-<br><br>
+<br>
 **Grazing boxplots by region and subregion<br>**
 *Note that the initial volumes are missing for some USVI and PR data, thereby removing some of those grazing values.
 ```{r, echo=FALSE}
@@ -366,7 +433,7 @@ plot_grazingRegion_Atlantic <- ggplot(data=atlanticBarData_clean[!is.na(atlantic
   scale_x_discrete(name="")+MyTheme
 plot_grazingRegion_Atlantic
 ```
-<br><br>
+<br>
 **Accretion boxplots by region and subregion<br>**
 ```{r, echo=FALSE}
 plot_accretionRegion_Atlantic <- ggplot(data=atlanticBarData_clean[!is.na(atlanticBarData_clean$subRegion),],
@@ -384,7 +451,15 @@ plot_accretionRegion_Atlantic
 
 
 
-## The vast Pacific: 
+
+
+<br><br><br><br>
+
+
+
+
+
+# **The vast Pacific:** 
 ```{r, echo=FALSE}
 pacificBarData_clean <- allBarData_clean %>% 
   filter(basin =='Pacific')
