@@ -53,8 +53,8 @@ theme(legend.position="top",
 
 #Get the BAR data
 rootFolder <-getwd() #get root folder
-atlanticBarData_raw <- read_excel(paste(rootFolder,"/Github/globalBar/analysis/data/NCRMP_Atlantic_allBmuData_March2024.xlsx",sep=""))#import data
-pacificBarData_raw <- read_excel(paste(rootFolder,"/Github/globalBar/analysis/data/NCRMP_Pacific_allBmuData_March2024.xlsx",sep=""))#import data
+atlanticBarData_raw <- read_excel(paste(rootFolder,"/Github/globalBar/analysis/data/NCRMP_Atlantic_allBmuData.xlsx",sep=""))#import data
+pacificBarData_raw <- read_excel(paste(rootFolder,"/Github/globalBar/analysis/data/NCRMP_Pacific_allBmuData.xlsx",sep=""))#import data
 allBarData_raw <- rbind(atlanticBarData_raw, pacificBarData_raw)
 allBarData_clean <- allBarData_raw %>% 
   filter(fate=='SUCCESSFULLY RECOVERED') %>% #remove bars that weren't recovered
@@ -651,25 +651,17 @@ p + geom_text(data = subset(allBarData_clean, deltaMass_mgcm2y > 100), aes(label
 <br><br>
 
 ## Influence of duration
-### deltaMass_mgcm2y
-Plot of deltaMass_mgcm2y vs. daysDeployed:
 ```{r, echo=FALSE}
-plotDeltaMassVsDays <- ggplot(allBarData_clean, aes(x = daysDeployed, y = deltaMass_mgcm2y)) +
-  geom_point(aes(color = factor(loc2))) +  # Scatterplot
-  geom_smooth(method = "lm", se = TRUE) +  # Regression line
-  theme_minimal()
-# Calculate R-squared value
 lm_model_deltaMassVsDays <- lm(deltaMass_mgcm2y ~ daysDeployed, data = allBarData_clean)
 r_squared_deltaMassVsDays <- summary(lm_model_deltaMassVsDays)$r.squared
-# Add R-squared value to the plot
-plotDeltaMassVsDays + geom_text(data = subset(allBarData_clean, daysDeployed > 2500), aes(label = tagNum), hjust = -0.1, vjust = -0.5, size = 2)+# Add tag numbers here where days deployed is greater than 2500
-    geom_text(data = subset(allBarData_clean, deltaMass_mgcm2y > 100), aes(label = tagNum), hjust = -0.1, vjust = -0.5, size = 2)+# Add tag numbers here where delta mass is greater than 100
-      geom_text(x = 2000, y = 100, label = paste("R^2 =", round(r_squared_deltaMassVsDays, 5)), size = 3)
-```
-
-### deltaVolume_mm3cm2y
-Plot of deltaVolume_mm3cm2y vs. daysDeployed:
-```{r, echo=FALSE}
+plotDeltaMassVsDays <- ggplot(allBarData_clean, aes(x = daysDeployed, y = deltaMass_mgcm2y)) +
+  geom_point(aes(color = factor(loc2)))+  # Scatterplot
+  geom_smooth(method = "lm", se = TRUE) +  # Regression line
+  theme_minimal() + 
+  geom_text(data = subset(allBarData_clean, daysDeployed > 2500), aes(label = tagNum), hjust = -0.1, vjust = -0.5, size = 2)+# Add tag numbers here where days deployed is greater than 2500
+  geom_text(data = subset(allBarData_clean, deltaMass_mgcm2y > 100), aes(label = tagNum), hjust = -0.1, vjust = -0.5, size = 2)+# Add tag numbers here where delta mass is greater than 100
+  geom_text(x = 2000, y = 100, label = paste("R^2 =", round(r_squared_deltaMassVsDays, 5)), size = 3)
+#Plot of deltaVolume_mm3cm2y vs. daysDeployed:
 lm_model_deltaVolumeVsDays <- lm(deltaVolume_mm3cm2y ~ daysDeployed, data = allBarData_clean)
 r_squared_deltaVolumeVsDays <- summary(lm_model_deltaVolumeVsDays)$r.squared
 plotDeltaVolumeVsDays <- ggplot(allBarData_clean, aes(x = daysDeployed, y = deltaVolume_mm3cm2y)) +
@@ -677,25 +669,15 @@ plotDeltaVolumeVsDays <- ggplot(allBarData_clean, aes(x = daysDeployed, y = delt
   geom_smooth(method = "lm", se = TRUE) +  # Regression line
   theme_minimal()+
   geom_text(x = 2000, y = -30, label = paste("R^2 =", round(r_squared_deltaVolumeVsDays, 5)), size = 3)
-plotDeltaVolumeVsDays
-```
-
-### deltaDensity_mgcm3cm2y
-Plot of deltaDensity_mgcm3cm2y vs. daysDeployed:
-```{r, echo=FALSE}
+#Plot of deltaDensity_mgcm3cm2y vs. daysDeployed:
 lm_model_deltaDensityVsDays <- lm(deltaDensity_mgcm3cm2y ~ daysDeployed, data = allBarData_clean)
 r_squared_deltaDensityVsDays <- summary(lm_model_deltaDensityVsDays)$r.squared
 plotDeltaDensityVsDays <- ggplot(allBarData_clean, aes(x = daysDeployed, y = deltaDensity_mgcm3cm2y)) +
   geom_point(aes(color = factor(loc2))) +  # Scatterplot
   geom_smooth(method = "lm", se = TRUE) +  # Regression line
   theme_minimal()+
-  geom_text(x = 2000, y = -30, label = paste("R^2 =", round(r_squared_deltaDensityVsDays, 5)), size = 3)
-plotDeltaDensityVsDays
-```
-
-### macroboring_mm3cm2y
-Plot of macroboring_mm3cm2y vs. daysDeployed:
-```{r, echo=FALSE}
+  geom_text(x = 2000, y = -5, label = paste("R^2 =", round(r_squared_deltaDensityVsDays, 5)), size = 3)
+#Plot of macroboring_mm3cm2y vs. daysDeployed:
 lm_model_macroboringVsDays <- lm(macroboring_mm3cm2y ~ daysDeployed, data = allBarData_clean)
 r_squared_macroboringVsDays <- summary(lm_model_macroboringVsDays)$r.squared
 plotMacroboringVsDays <- ggplot(allBarData_clean, aes(x = daysDeployed, y = macroboring_mm3cm2y)) +
@@ -703,12 +685,7 @@ plotMacroboringVsDays <- ggplot(allBarData_clean, aes(x = daysDeployed, y = macr
   geom_smooth(method = "lm", se = TRUE) +  # Regression line
   theme_minimal()+
   geom_text(x = 2000, y = -30, label = paste("R^2 =", round(r_squared_macroboringVsDays, 5)), size = 3)
-plotMacroboringVsDays
-```
-
-### grazing_mm3cm2y
-Plot of grazing_mm3cm2y vs. daysDeployed:
-```{r, echo=FALSE}
+#Plot of grazing_mm3cm2y vs. daysDeployed:
 lm_model_grazingVsDays <- lm(grazing_mm3cm2y ~ daysDeployed, data = allBarData_clean)
 r_squared_grazingVsDays <- summary(lm_model_grazingVsDays)$r.squared
 plotGrazingVsDays <- ggplot(allBarData_clean, aes(x = daysDeployed, y = grazing_mm3cm2y)) +
@@ -716,12 +693,7 @@ plotGrazingVsDays <- ggplot(allBarData_clean, aes(x = daysDeployed, y = grazing_
   geom_smooth(method = "lm", se = TRUE) +  # Regression line
   theme_minimal()+
   geom_text(x = 2000, y = -75, label = paste("R^2 =", round(r_squared_grazingVsDays, 2)), size = 3)
-plotGrazingVsDays
-```
-
-### accretion_mm3cm2y
-Plot of accretion_mm3cm2y vs. daysDeployed:
-```{r, echo=FALSE}
+#Plot of accretion_mm3cm2y vs. daysDeployed:
 lm_model_accretionVsDays <- lm(accretion_mm3cm2y ~ daysDeployed, data = allBarData_clean)
 r_squared_accretionVsDays <- summary(lm_model_accretionVsDays)$r.squared
 plotAccretionVsDays <- ggplot(allBarData_clean, aes(x = daysDeployed, y = accretion_mm3cm2y)) +
@@ -729,10 +701,10 @@ plotAccretionVsDays <- ggplot(allBarData_clean, aes(x = daysDeployed, y = accret
   geom_smooth(method = "lm", se = TRUE) +  # Regression line
   theme_minimal()+
   geom_text(x = 2000, y = 100, label = paste("R^2 =", round(r_squared_accretionVsDays, 2)), size = 3)
-plotAccretionVsDays
+ggarrange(plotDeltaMassVsDays,plotDeltaVolumeVsDays,plotDeltaDensityVsDays,plotMacroboringVsDays,plotGrazingVsDays,plotAccretionVsDays, ncol = 3, nrow = 2, common.legend = TRUE, legend = "bottom")
 ```
 
-# Location analysis
+# Global spatial analysis
 ## deltaMass_mgcm2y
 deltaMass_mgcm2y boxplots by region and subregion
 ```{r, echo=FALSE}
@@ -830,6 +802,176 @@ plot_accretion_allBarData_clean <- ggplot(data=allBarData_clean[!is.na(allBarDat
   guides(fill = FALSE)  
 plot_accretion_allBarData_clean
 ```
+
+# Florida Keys regional analysis
+## Florida Keys summary statistics
+Creates Keys-specific data sets for subsequent analysis
+```{r, echo=FALSE}
+allBarData_keysAnalysis <- allBarData_clean %>% 
+  filter(loc2=='keys') %>% #remove bars from Saint Thomas
+  mutate(shelf =(case_when(
+    loc3 == "LKO1"  ~ "offshore",
+    loc3 == "LKO2"  ~ "offshore",
+    loc3 == "LKI1"  ~ "inshore",
+    loc3 == "LKI2"  ~ "inshore",
+    loc3 == "MKO1"  ~ "offshore",
+    loc3 == "MKO2"  ~ "offshore",
+    loc3 == "MKI1"  ~ "inshore",
+    loc3 == "MKI2"  ~ "inshore",
+    loc3 == "UKO1"  ~ "offshore",
+    loc3 == "UKO3"  ~ "offshore",
+    loc3 == "cheecaRocks"  ~ "inshore",
+    loc3 == "UKI2"  ~ "inshore"))) %>%
+  mutate(keysRegion =(case_when(
+    loc3 == "LKO1"  ~ "lower",
+    loc3 == "LKO2"  ~ "lower",
+    loc3 == "LKI1"  ~ "lower",
+    loc3 == "LKI2"  ~ "lower",
+    loc3 == "MKO1"  ~ "middle",
+    loc3 == "MKO2"  ~ "middle",
+    loc3 == "MKI1"  ~ "middle",
+    loc3 == "MKI2"  ~ "middle",
+    loc3 == "UKO1"  ~ "upper",
+    loc3 == "UKO3"  ~ "upper",
+    loc3 == "cheecaRocks"  ~ "upper",
+    loc3 == "UKI2"  ~ "upper")))
+allBarData_keysAnalysis$keysRegion.shelf <- paste(allBarData_keysAnalysis$keysRegion, allBarData_keysAnalysis$shelf,sep="-")
+keysBarStats <- allBarData_keysAnalysis %>%
+  group_by(keysRegion,shelf, loc3) %>%
+  summarise(maxDays = max(daysDeployed), minDays = min(daysDeployed),n = n(), maxDepth = max(depth), minDepth = min(depth), meanDepth = mean(depth),
+    meanDeltaMass = mean(deltaMass_mgcm2y), sdDeltaMass = sd(deltaMass_mgcm2y), seDeltaMass = (sd(deltaMass_mgcm2y)/sqrt(n())),
+    meanDeltaVolume = mean(deltaVolume_mm3cm2y), sdDeltaVolume = sd(deltaVolume_mm3cm2y), seDeltaVolume = (sd(deltaVolume_mm3cm2y)/sqrt(n())),
+    meanDeltaDensity = mean(deltaDensity_mgcm3cm2y), sdDeltaDensity = sd(deltaDensity_mgcm3cm2y), seDeltaDensity = (sd(deltaDensity_mgcm3cm2y)/sqrt(n())),
+    meanMacroboring = mean(macroboring_mm3cm2y), sdMacroboring = sd(macroboring_mm3cm2y), seMacroboring = (sd(macroboring_mm3cm2y)/sqrt(n())), 
+    meanGrazing = mean(grazing_mm3cm2y), sdGrazing = sd(grazing_mm3cm2y), seGrazing = (sd(grazing_mm3cm2y)/sqrt(n())), 
+    meanAccretion = mean(accretion_mm3cm2y), sdAccretion = sd(accretion_mm3cm2y), seAccretion = (sd(accretion_mm3cm2y)/sqrt(n())))
+kbl(keysBarStats)%>%
+  kable_classic(full_width = F, html_font = "Cambria") %>%
+  add_header_above(c("location" = 3, "deployment" = 3, "depth" = 3, "deltaMass" = 3, "deltaVolume" = 3, "deltaDensity" = 3,"macroboring" = 3, "grazing" = 3, "accretion" = 3))%>%
+  scroll_box(width = "1000px")
+```
+## Influence of duration
+```{r, echo=FALSE}
+lm_model_deltaMassVsDays_keys <- lm(deltaMass_mgcm2y ~ daysDeployed, data = allBarData_keysAnalysis)
+r_squared_deltaMassVsDays_keys <- summary(lm_model_deltaMassVsDays_keys)$r.squared
+plotDeltaMassVsDays_keys <- ggplot(allBarData_keysAnalysis, aes(x = daysDeployed, y = deltaMass_mgcm2y)) +
+  geom_point(aes(color = factor(keysRegion.shelf)))+  # Scatterplot
+  geom_smooth(method = "lm", se = TRUE) +  # Regression line
+  theme_minimal() + 
+  geom_text(data = subset(allBarData_keysAnalysis, daysDeployed > 2500), aes(label = tagNum), hjust = -0.1, vjust = -0.5, size = 2)+# Add tag numbers here where days deployed is greater than 2500
+  geom_text(data = subset(allBarData_keysAnalysis, deltaMass_mgcm2y > 100), aes(label = tagNum), hjust = -0.1, vjust = -0.5, size = 2)+# Add tag numbers here where delta mass is greater than 100
+  geom_text(x = 2000, y = 100, label = paste("R^2 =", round(r_squared_deltaMassVsDays_keys, 5)), size = 3)
+#Plot of deltaVolume_mm3cm2y vs. daysDeployed:
+lm_model_deltaVolumeVsDays_keys <- lm(deltaVolume_mm3cm2y ~ daysDeployed, data = allBarData_keysAnalysis)
+r_squared_deltaVolumeVsDays_keys <- summary(lm_model_deltaVolumeVsDays_keys)$r.squared
+plotDeltaVolumeVsDays_keys <- ggplot(allBarData_keysAnalysis, aes(x = daysDeployed, y = deltaVolume_mm3cm2y)) +
+  geom_point(aes(color = factor(keysRegion.shelf))) +  # Scatterplot
+  geom_smooth(method = "lm", se = TRUE) +  # Regression line
+  theme_minimal()+
+  geom_text(x = 2000, y = -30, label = paste("R^2 =", round(r_squared_deltaVolumeVsDays_keys, 5)), size = 3)
+#Plot of deltaDensity_mgcm3cm2y vs. daysDeployed:
+lm_model_deltaDensityVsDays_keys <- lm(deltaDensity_mgcm3cm2y ~ daysDeployed, data = allBarData_keysAnalysis)
+r_squared_deltaDensityVsDays_keys <- summary(lm_model_deltaDensityVsDays_keys)$r.squared
+plotDeltaDensityVsDays_keys <- ggplot(allBarData_keysAnalysis, aes(x = daysDeployed, y = deltaDensity_mgcm3cm2y)) +
+  geom_point(aes(color = factor(keysRegion.shelf))) +  # Scatterplot
+  geom_smooth(method = "lm", se = TRUE) +  # Regression line
+  theme_minimal()+
+  geom_text(x = 2000, y = -5, label = paste("R^2 =", round(r_squared_deltaDensityVsDays_keys, 5)), size = 3)
+#Plot of macroboring_mm3cm2y vs. daysDeployed:
+lm_model_macroboringVsDays_keys <- lm(macroboring_mm3cm2y ~ daysDeployed, data = allBarData_keysAnalysis)
+r_squared_macroboringVsDays_keys <- summary(lm_model_macroboringVsDays_keys)$r.squared
+plotMacroboringVsDays_keys <- ggplot(allBarData_keysAnalysis, aes(x = daysDeployed, y = macroboring_mm3cm2y)) +
+  geom_point(aes(color = factor(keysRegion.shelf))) +  # Scatterplot
+  geom_smooth(method = "lm", se = TRUE) +  # Regression line
+  theme_minimal()+
+  geom_text(x = 2000, y = -30, label = paste("R^2 =", round(r_squared_macroboringVsDays_keys, 5)), size = 3)
+#Plot of grazing_mm3cm2y vs. daysDeployed:
+lm_model_grazingVsDays_keys <- lm(grazing_mm3cm2y ~ daysDeployed, data = allBarData_keysAnalysis)
+r_squared_grazingVsDays_keys <- summary(lm_model_grazingVsDays_keys)$r.squared
+plotGrazingVsDays_keys <- ggplot(allBarData_keysAnalysis, aes(x = daysDeployed, y = grazing_mm3cm2y)) +
+  geom_point(aes(color = factor(keysRegion.shelf))) +  # Scatterplot
+  geom_smooth(method = "lm", se = TRUE) +  # Regression line
+  theme_minimal()+
+  geom_text(x = 2000, y = -75, label = paste("R^2 =", round(r_squared_grazingVsDays_keys, 2)), size = 3)
+#Plot of accretion_mm3cm2y vs. daysDeployed:
+lm_model_accretionVsDays_keys <- lm(accretion_mm3cm2y ~ daysDeployed, data = allBarData_keysAnalysis)
+r_squared_accretionVsDays_keys <- summary(lm_model_accretionVsDays_keys)$r.squared
+plotAccretionVsDays_keys <- ggplot(allBarData_keysAnalysis, aes(x = daysDeployed, y = accretion_mm3cm2y)) +
+  geom_point(aes(color = factor(keysRegion.shelf))) +  # Scatterplot
+  geom_smooth(method = "lm", se = TRUE) +  # Regression line
+  theme_minimal()+
+  geom_text(x = 2000, y = 40, label = paste("R^2 =", round(r_squared_accretionVsDays_keys, 2)), size = 3)
+ggarrange(plotDeltaMassVsDays_keys,plotDeltaVolumeVsDays_keys,plotDeltaDensityVsDays_keys,plotMacroboringVsDays_keys,plotGrazingVsDays_keys,plotAccretionVsDays_keys, ncol = 3, nrow = 2, common.legend = TRUE, legend = "bottom")
+```
+
+## Keys-wide spatial analysis
+```{r, echo=FALSE}
+plot_deltaMass_allBarData_keysAnalysis <- ggplot(data=allBarData_keysAnalysis[!is.na(allBarData_keysAnalysis$keysRegion.shelf),], aes(x=keysRegion.shelf, fill=keysRegion.shelf, y=deltaMass_mgcm2y)) +
+  geom_boxplot(position = position_dodge2(preserve = "single")) +
+  geom_hline(yintercept=0, linetype="dashed", color = "red")+
+  scale_y_continuous(name=(expression(~Delta~mass~(mg~cm^-2~y^-1))))+
+  scale_x_discrete(name="")+
+  MyTheme+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))+
+  ylim(-200, 150)
+plot_deltaVolume_allBarData_keysAnalysis <- ggplot(data=allBarData_keysAnalysis[!is.na(allBarData_keysAnalysis$keysRegion.shelf),], aes(x=keysRegion.shelf, fill=keysRegion.shelf, y=deltaVolume_mm3cm2y)) +
+  geom_boxplot(position = position_dodge2(preserve = "single")) +
+  geom_hline(yintercept=0, linetype="dashed", color = "red")+
+  scale_y_continuous(name=(expression(~Delta~volume~(mm^3~cm^-2~y^-1))))+
+  scale_x_discrete(name="")+
+  MyTheme+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))+
+  ylim(-150, 10)
+plot_deltaDensity_allBarData_keysAnalysis <- ggplot(data=allBarData_keysAnalysis[!is.na(allBarData_keysAnalysis$keysRegion.shelf),], aes(x=keysRegion.shelf, fill=keysRegion.shelf, y=deltaDensity_mgcm3cm2y)) +
+  geom_boxplot(position = position_dodge2(preserve = "single")) +
+  geom_hline(yintercept=0, linetype="dashed", color = "red")+
+  scale_y_continuous(name=(expression(~Delta~density~(mg~cm^-3~cm^-2~y^-1))))+
+  scale_x_discrete(name="")+
+  MyTheme+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))+
+  ylim(-20, 10)
+plot_macroboring_allBarData_keysAnalysis <- ggplot(data=allBarData_keysAnalysis[!is.na(allBarData_keysAnalysis$keysRegion.shelf),], aes(x=keysRegion.shelf, fill=keysRegion.shelf, y=macroboring_mm3cm2y)) +
+  geom_boxplot(position = position_dodge2(preserve = "single")) +
+  geom_hline(yintercept=0, linetype="dashed", color = "red")+
+  scale_y_continuous(name=(expression(~Delta~volume~(mm^3~cm^-2~y^-1))))+
+  scale_x_discrete(name="")+
+  MyTheme+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))+
+  ylim(-65, 5)
+plot_grazing_allBarData_keysAnalysis <- ggplot(data=allBarData_keysAnalysis[!is.na(allBarData_keysAnalysis$keysRegion.shelf),], aes(x=keysRegion.shelf, fill=keysRegion.shelf, y=grazing_mm3cm2y)) +
+  geom_boxplot(position = position_dodge2(preserve = "single")) +
+  geom_hline(yintercept=0, linetype="dashed", color = "red")+
+  scale_y_continuous(name=(expression(~Delta~volume~(mm^3~cm^-2~y^-1))))+
+  scale_x_discrete(name="")+
+  MyTheme+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))+
+  ylim(-150, 5)
+plot_accretion_allBarData_keysAnalysis <- ggplot(data=allBarData_keysAnalysis[!is.na(allBarData_keysAnalysis$keysRegion.shelf),], aes(x=keysRegion.shelf, fill=keysRegion.shelf, y=accretion_mm3cm2y)) +
+  geom_boxplot(position = position_dodge2(preserve = "single")) +
+  geom_hline(yintercept=0, linetype="dashed", color = "red")+
+  scale_y_continuous(name=(expression(~Delta~volume~(mm^3~cm^-2~y^-1))))+
+  scale_x_discrete(name="")+
+  MyTheme+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))+
+  ylim(-5, 80) 
+ggarrange(plot_deltaMass_allBarData_keysAnalysis,plot_deltaVolume_allBarData_keysAnalysis,plot_deltaDensity_allBarData_keysAnalysis,plot_macroboring_allBarData_keysAnalysis,plot_grazing_allBarData_keysAnalysis,plot_accretion_allBarData_keysAnalysis, ncol = 3, nrow = 2, common.legend = TRUE, legend = "bottom")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # Exploration of grazing
 Note: need to use datasets where all St. Thomas and all French Frigate Shoals data have been removed because of replication
