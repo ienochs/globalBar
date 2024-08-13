@@ -1,0 +1,17 @@
+<<<7/20/24>>>
+Ahoy Dr. Landlubber Enochs,
+
+Ha sorry...I think some of this reflects the chaos of our pre-database overhaul times that I never corrected for you all!
+
+I've attached a master list of sites with the canonical gps coordinates and depth for each of the sites in question. I'd recommend using these if you don't mind doing a little R magic to combine data sets. I only noted one site name error, which was that OCC-HAW-066 should be OCC-HAW-006 (i.e. the site that got covered in lava during the 2018 Kilauea eruption and no longer exists).
+
+As far as points shifting over the years, our protocol is that we take a GPS point at the site every year we visit (for database tracking reasons), but also maintain what we consider to be the master site info (attached). Our yearly site visit coordinates can vary a bit depending on exactly where we take the point and how good the GPS we're using is (which has improved over time), though the actual site on the benthos doesn't change. The only one on your list that looked egregiously different was OCC-OAH-002, for which I would use the coordinate in the attached spreadsheet. Sorry about that.
+
+I'll work with Kisei a.k.a. great data wizard to get some satellite data for these sites. I'm back ashore July 30, so probably a bit after that.
+
+Hannah
+
+<<<8/13/2024>>>
+Ian Changed ALL HAW 066 to HAW-006
+
+Ian Changed ALL OCC-OAH-002 GPS to (21.59095	-158.17467)

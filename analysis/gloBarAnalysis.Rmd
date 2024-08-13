@@ -128,26 +128,26 @@ allBarData_clean <- allBarData_raw %>%
     siteName == "UKO1"  ~ "UKO1",
     siteName == "UKO3"  ~ "UKO3",
     #Puerto Rico
-    siteName == "La Parguera"  ~ "laParguera",   
-    siteName == "Rincon"  ~ "rincon",  
-    siteName == "Arecibo"  ~ "arecibo",  
-    siteName == "Culebra"  ~ "culebra",      
-    siteName == "Jobos Bay"  ~ "jobosBay",  
-    siteName == "Fajardo"  ~ "fajardo", 
+    siteName == "laParguera"  ~ "laParguera",   
+    siteName == "rincon"  ~ "rincon",  
+    siteName == "arecibo"  ~ "arecibo",  
+    siteName == "culebra"  ~ "culebra",      
+    siteName == "jobosBay"  ~ "jobosBay",  
+    siteName == "fajardo"  ~ "fajardo", 
     #Saint John
-    siteName == "Johnson's Reef"  ~ "johnsonsReef",  
-    siteName == "Newfound"  ~ "newfound",  
-    siteName == "Steven Cay"  ~ "stevenCay",  
-    siteName == "Tektite"  ~ "tektite",  
+    siteName == "johnsonsReef"  ~ "johnsonsReef",  
+    siteName == "newfound"  ~ "newfound",  
+    siteName == "stevenCay"  ~ "stevenCay",  
+    siteName == "tektite"  ~ "tektite",  
     #Saint Thomas
-    siteName == "Brewer's Bay"  ~ "brewersBay",      
-    siteName == "Inner Brass"  ~ "innerBrass",          
-    siteName == "Sava"  ~ "sava",          
+    siteName == "brewersBay"  ~ "brewersBay",      
+    siteName == "innerBrass"  ~ "innerBrass",          
+    siteName == "sava"  ~ "sava",          
     #Saint Croix
-    siteName == "East/Lang Bank"  ~ "langBank",        
-    siteName == "Salt River"  ~ "saltRiver",       
-    siteName == "South"  ~ "south",     
-    siteName == "Sprat Hole"  ~ "spratHole",     
+    siteName == "langBank"  ~ "langBank",        
+    siteName == "saltRiver"  ~ "saltRiver",       
+    siteName == "south"  ~ "south",     
+    siteName == "spratHole"  ~ "spratHole",     
     #Saipan
     siteName == "OCC-SAI-002"  ~ "OCC-SAI-002",  
     siteName == "OCC-SAI-005"  ~ "OCC-SAI-005",      
@@ -305,27 +305,25 @@ parrotCommunityData<-parrotCommunityData%>%
     siteName == "UKO1"  ~ "UKO1",
     siteName == "UKO3"  ~ "UKO3",
     #Puerto Rico
-    siteName == "La Parguera"  ~ "laParguera",   
-    siteName == "Rincon"  ~ "rincon",  
-    siteName == "Arecibo"  ~ "arecibo",  
-    siteName == "Culebra"  ~ "culebra",      
-    siteName == "Jabos Bay"  ~ "jobosBay",#note misspelling in data file      
-    siteName == "Fajardo"  ~ "fajardo", #note listed as San Juan in data file, but unclear if should be grouped with Fajardo, need to ask John
-    siteName == "San Juan"  ~ "fajardo", #note listed as San Juan in data file instead of Fajardo
-    #Saint John
-    siteName == "Johnson's Reef"  ~ "johnsonsReef",  
-    siteName == "Newfound"  ~ "newfound",  
-    siteName == "Steven Cay"  ~ "stevenCay",  
-    siteName == "Tektite"  ~ "tektite",  
+    siteName == "laParguera"  ~ "laParguera",   
+    siteName == "rincon"  ~ "rincon",  
+    siteName == "arecibo"  ~ "arecibo",  
+    siteName == "culebra"  ~ "culebra",      
+    siteName == "jobosBay"  ~ "jobosBay",#note misspelling in data file as jAbos not jobos     
+    siteName == "fajardo"  ~ "fajardo", #note listed as San Juan in data file, but unclear if should be grouped with     #Saint John
+    siteName == "johnsonsReef"  ~ "johnsonsReef",  
+    siteName == "newfound"  ~ "newfound",  
+    siteName == "stevenCay"  ~ "stevenCay",  
+    siteName == "tektite"  ~ "tektite",  
     #Saint Thomas
-    siteName == "Brewer's Bay"  ~ "brewersBay",      
-    siteName == "Inner Brass"  ~ "innerBrass",          
-    siteName == "Sava"  ~ "sava",          
+    siteName == "brewersBay"  ~ "brewersBay",      
+    siteName == "innerBrass"  ~ "innerBrass",          
+    siteName == "sava"  ~ "sava",          
     #Saint Croix
-    siteName == "East/Lang Bank"  ~ "langBank",        
-    siteName == "Salt River"  ~ "saltRiver",       
-    siteName == "South"  ~ "south",     
-    siteName == "Sprat Hole"  ~ "spratHole",     
+    siteName == "langBank"  ~ "langBank",        
+    siteName == "saltRiver"  ~ "saltRiver",       
+    siteName == "south"  ~ "south",     
+    siteName == "spratHole"  ~ "spratHole",     
     #Saipan
     siteName == "OCC-SAI-002"  ~ "OCC-SAI-002",  
     siteName == "OCC-SAI-005"  ~ "OCC-SAI-005",      
