@@ -402,7 +402,49 @@ parrotCommunityData<-parrotCommunityData%>%
     siteName == "OCC-WAK-013"  ~ "OCC-WAK-013")))        
 allBarData_clean$loc1.2 <- paste(allBarData_clean$loc1, allBarData_clean$loc2,sep="-")
 
+#Get environmental data
+environmentalData <- read.csv(paste(rootFolder,"/Github/globalBar/analysis/data/environmental/eds_time.csv",sep=""), header=TRUE, sep=",") #import data
+environmentalData<-environmentalData%>%
+  mutate(Degree_Heating_Weeks_CRW_daily_01dy =(case_when(
+    Degree_Heating_Weeks_CRW_daily_01dy == "Inf"  ~ NA)))%>%
+  mutate(major_Degree_Heating_Weeks_CRW_daily_01dy =(case_when(
+    major_Degree_Heating_Weeks_CRW_daily_01dy == "Inf"  ~ NA)))%>%
+  mutate(loc3 =(case_when(
+    lat == 18.48227  ~ "arecibo", 
+    lat == 18.33066  ~ "culebra",
+    lat == 18.33696  ~ "fajardo",
+    lat == 17.91047  ~ "jobosBay",
+    lat == 17.95355  ~ "laParguera",
+    lat == 18.34435  ~ "rincon",
+    lat == 17.82805  ~ "langBank",
+    lat == 17.78532  ~ "saltRiver",
+    lat == 17.70121  ~ "south",
+    lat == 17.73380  ~ "spratHole",
+    lat == 18.36316  ~ "johnsonsReef",
+    lat == 18.34744  ~ "newfound",
+    lat == 18.32802  ~ "stevenCay",
+    lat == 18.30976  ~ "tektite",
+    lat == 18.34402  ~ "brewersBay",#note only one brewersBay on environmental but multiple on BMU
+    lat == 18.38262  ~ "innerBrass",
+    lat == 18.34082  ~ "sava",
+    lat == 24.61123  ~ "birdKeyReef",
+    lat == 24.58590  ~ "LKI1",
+    lat == 24.57899  ~ "LKI2",
+    lat == 24.52202  ~ "LKO1",
+    lat == 24.55326  ~ "LKO2",
+    lat == 24.68554  ~ "MKI1",
+    lat == 24.68988  ~ "MKI2",
+    lat == 24.63127  ~ "MKO1",
+    lat == 24.63388  ~ "MKO2",
+    lat == 24.95375  ~ "UKI2",
+    lat == 24.90250  ~ "UKO1",
+    lat == 24.88266  ~ "UKO3",
+    lat == 24.89742  ~ "cheecaRocks",
+    lat == 27.90740  ~ "eastBank",
+    lat == 13.60334  ~ "OCC-GUA-002",
+    lat == 13.47516  ~ "OCC-GUA-005"))) #<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<NEED TO EXPAND THESE OUT>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 ```
+
 
 # Data exploration
 ## BAR data
@@ -522,7 +564,24 @@ parrotBiomassDensityStatsPlot <- ggplot(grazingParrotStats, aes(x = meanDensity_
 parrotBiomassDensityStatsPlot
 ```
 
-## Map of BAR and parrot surveys
+## Environmental data
+Table of summary statistics for loc2 sites
+```{r, echo=FALSE}
+siteEnvironmentalStats <- environmentalData %>%
+  filter(mean_Sea_Surface_Salinity_MirasSMOS_3Day_03mo != "")%>%
+  filter(mean_PAR_NASA_VIIRS_monthly_01mo != "")%>% 
+  group_by(basin, loc1, loc2, loc3, lat, lon) %>%
+  summarise(maxDate = max(date), minDate = min(date), n = n(), 
+            maxTemperature = max(mean_Sea_Surface_Temperature_CRW_daily_01mo), minTemperature = min(mean_Sea_Surface_Temperature_CRW_daily_01mo), meanTemperature = mean(mean_Sea_Surface_Temperature_CRW_daily_01mo),
+            maxSalinity = max(mean_Sea_Surface_Salinity_MirasSMOS_3Day_03mo), minSalinity = min(mean_Sea_Surface_Salinity_MirasSMOS_3Day_03mo), meanSalinity = mean(mean_Sea_Surface_Salinity_MirasSMOS_3Day_03mo),
+            maxPAR = max(mean_PAR_NASA_VIIRS_monthly_01mo), minPAR = min(mean_PAR_NASA_VIIRS_monthly_01mo), meanPAR = mean(mean_PAR_NASA_VIIRS_monthly_01mo))
+kbl(siteEnvironmentalStats) %>%
+  kable_classic(full_width = F, html_font = "Cambria") %>%
+#  add_header_above(c("location" = 3, "deployment" = 3, "depth" = 3, "deltaMass" = 3, "deltaVolume" = 3, "deltaDensity" = 3,"macroboring" = 3, "grazing" = 3, "accretion" = 3))%>%
+  scroll_box(height = "500px")
+```
+
+## Map of BAR, parrot surveys, and environmental sites
 ```{r, echo=FALSE}
 barSiteMap <-leaflet()%>%
   addProviderTiles(providers$CartoDB.PositronNoLabels)%>%
@@ -537,7 +596,13 @@ barSiteMap <-leaflet()%>%
              color = "red",
              popup = ~loc3,
              lng = ~longitudeFishSurvey,
-             lat = ~latitudeFishSurvey)
+             lat = ~latitudeFishSurvey)%>%
+  addCircleMarkers(data = environmentalData,
+             radius = 1,
+             color = "green",
+             popup = ~loc2,
+             lng = ~lon,
+             lat = ~lat)
 barSiteMap
 ```
 
