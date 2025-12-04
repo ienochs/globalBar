@@ -332,6 +332,7 @@ rootFolder <- getwd()
 data_dir   <- file.path(rootFolder, "Github", "globalBar", "analysis", "data")
 atl_path   <- file.path(data_dir, "NCRMP_Atlantic_allBmuData.xlsx")
 pac_path   <- file.path(data_dir, "NCRMP_Pacific_allBmuData.xlsx")
+dec2025Update_path   <- file.path(data_dir, "Pac_Atl_NCRMP_2024_updateDec2025.xlsx") #dec2025 update path
 
 p_dir <- file.path(rootFolder, "Github", "globalBar", "analysis", "data", "parrotfish")
 atl_comm_path <- file.path(p_dir, "parrotfish_BMUs_Atlantic.csv")
@@ -355,8 +356,6 @@ to_basin <- function(region) dplyr::case_when(
   region %in% c("MARIAN","MHI","NWHI","PRIA","SAMOA")      ~ "pacific",
   TRUE ~ NA_character_
 )
-
-
 
 to_loc1 <- function(region) dplyr::case_when(
   region %in% c("DRTO","FLK")           ~ "florida",
@@ -562,7 +561,7 @@ read_bind_excel <- function(paths, sheet = NULL) {
 }
 # Read & Bind Bar Data
 barData_raw <-
-  read_bind_excel(c(atl_path, pac_path)) %>%
+  read_bind_excel(c(atl_path, pac_path, dec2025Update_path)) %>%
   drop_all_na_rows()
 # Read & Bind Parrot Community Data
 parrotCommunityData <- read_bind_csv(c(atl_comm_path, pac_comm_path), ct) %>%
