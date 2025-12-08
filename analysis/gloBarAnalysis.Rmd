@@ -726,7 +726,7 @@ barData <- barData %>%
 # =========================
 # (2) Multipanel histograms with ±3 SD highlighting
 # =========================
-long_df <- barData1 %>% ###JTM Note: Should we be using the barData file with NA's removed rather than the entire barData file again???
+long_df <- barData %>% ###JTM Note: changed from barData1 to barData to run outlier identification on NA filtered dataset
   pivot_longer(cols = all_of(vars), names_to = "variable", values_to = "value") %>%
   filter(!is.na(value)) %>%
   group_by(variable) %>%
@@ -754,7 +754,8 @@ ggplot(long_df, aes(x = value, fill = outlier)) +
 # =========================
 # (2A) Table of outliers (values beyond ±3 SD)
 # =========================
-outlier_table <- barData1 %>%
+outlier_table <- barData %>% ###JTM Note: changed from barData1 to barData to run outlier identification on NA filtered dataset
+  mutate(tag = .data[["tagNum"]]) %>% #Added this line based on above note
   pivot_longer(cols = all_of(vars), names_to = "variable", values_to = "value") %>%
   group_by(variable) %>%
   mutate(
@@ -1341,8 +1342,11 @@ kbl(barStatsLoc2, align = "l") %>%
 ```{r barStatCalculations_loc3, echo=FALSE}
 barStatsLoc3 <- barData %>%
   filter(!is.na(grazing_mm3cm2y)) %>%
-  group_by(basin, loc1, loc2, loc1.2, loc3, latitude, longitude) %>%
+  #group_by(basin, loc1, loc2, loc1.2, loc3, latitude, longitude) %>% ##Note: grouping with lat/long is problematic since some Loc3 sites are marginally different lat/long
+  group_by(basin, loc1, loc2, loc1.2, loc3) %>%
   summarise(
+    latitude  = mean(latitude,  na.rm = TRUE),#Added based on the above note
+    longitude = mean(longitude, na.rm = TRUE),#Added based on the above note 
     n = dplyr::n(),
     maxDepth = max(depth, na.rm = TRUE),
     minDepth = min(depth, na.rm = TRUE),
