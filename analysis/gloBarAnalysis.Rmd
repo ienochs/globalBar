@@ -329,18 +329,21 @@ plot_loc3_lm_full_atl_pac <- function(
 ```{r dataImportFunctionsAndPath, echo=FALSE}
 # Constants & Paths
 rootFolder <- getwd()
-data_dir   <- file.path(rootFolder, "Github", "globalBar", "analysis", "data")
+##data_dir   <- file.path(rootFolder, "Github", "globalBar", "analysis", "data") #Original code
+data_dir   <- file.path(rootFolder, "data")
 atl_path   <- file.path(data_dir, "NCRMP_Atlantic_allBmuData.xlsx")
 pac_path   <- file.path(data_dir, "NCRMP_Pacific_allBmuData.xlsx")
 dec2025Update_path   <- file.path(data_dir, "Pac_Atl_NCRMP_2024_updateDec2025.xlsx") #dec2025 update path
 
-p_dir <- file.path(rootFolder, "Github", "globalBar", "analysis", "data", "parrotfish")
+##p_dir <- file.path(rootFolder, "Github", "globalBar", "analysis", "data", "parrotfish") #Original code
+p_dir <- file.path(rootFolder, "data", "parrotfish")
 atl_comm_path <- file.path(p_dir, "parrotfish_BMUs_Atlantic.csv")
 pac_comm_path <- file.path(p_dir, "parrotfish_BMUs_Pacific.csv")
 atl_fxn_path  <- file.path(p_dir, "parrotfishFXN_BMUs_Atlantic.csv")
 pac_fxn_path  <- file.path(p_dir, "parrotfishFXN_BMUs_Pacific.csv")
 
-e_dir <- file.path(rootFolder, "Github", "globalBar", "analysis", "data", "environmental")
+##e_dir <- file.path(rootFolder, "Github", "globalBar", "analysis", "data", "environmental") #Original code
+e_dir <- file.path(rootFolder, "data", "environmental")
 env_path <- file.path(e_dir, "eds_time.csv")
 
 # Helper: remove rows that are entirely NA (after making "" -> NA)
@@ -422,7 +425,7 @@ to_loc3 <- function(region, loc2, subRegion, siteName, basin, dataset_type, lat 
     # Hawaii
     "OCC-HAW-014"="north","OCC-HAW-002"="north","OCC-HAW-006"="east","OCC-HAW-066"="east","OCC-HAW-008"="south","OCC-HAW-010"="west",#note east is listed as 066 in parrotfish and 006 in bar
     # Oahu
-    "OCC-OAH-002"="north","OCC-OAH-005"="east","OCC-OAH-007"="east","OCC-OAH-008"="southeast", "OCC-OAH-009"="south","OCC-OAH-010"="south","OCC-OAH-014"="southwest","OCC-OAH-012"="west",
+    "OCC-OAH-002"="north","OCC-OAH-005"="east","OCC-OAH-007"="east","OCC-OAH-008"="southeast", "OCC-OAH-009"="south","OCC-OAH-010"="south","OCC-OAH-014"="southwest","OCC-OAH-012"="west",#note 009 doesn't exist
     # FFS
     "OCC-FFS-002"="north","OCC-FFS-004"="north","OCC-FFS-007"="east","OCC-FFS-010"="south","OCC-FFS-014"="west",
     # Pearl & Hermes
@@ -464,7 +467,7 @@ to_loc3 <- function(region, loc2, subRegion, siteName, basin, dataset_type, lat 
     # saipan
     "15.29062"="north","15.25866"="east","15.09785"="south","15.15639"="OCC-SAI-012","15.15645"="west","15.25719"="northwest",
     # hawaii
-    "20.26828"="north","20.24913"="north","19.48642"="east", "19.06075"="south", "19.24432"="west",      
+    "20.26828"="north","20.24913"="north","19.48642"="east", "19.06075"="south", "19.24432"="west",
     # oahu
     "21.45862"="east","21.47972"="east","21.28838"="south","21.26184"="southeast","21.53412"="west","21.30566"="southwest",
     # french frigate shoals
@@ -572,6 +575,19 @@ parrotFXNData <- read_bind_csv(c(atl_fxn_path, pac_fxn_path), ct) %>%
 
 environmentalData_raw <- read_bind_csv(c(env_path), cols(.default = col_guess())) %>%
   drop_all_na_rows()
+```
+
+```{r QAQC, echo=FALSE}
+#Fix typos in raw data
+barData_raw <- barData_raw %>%
+  mutate(
+    siteName = case_when(
+      siteName == "OCC-HAW-10" ~ "OCC-HAW-010",
+      siteName == "OCC-OAH-012" & as.character(tagNum) == "1660" ~ "OCC-OAH-002",
+      siteName == "OCC-JAR-003" & tagNum %in% c(3265, 3266, 3267, 3268) ~ "OCC-JAR-013",
+      TRUE ~ siteName
+          )
+  )
 ```
 
 ```{r creatLocFields, echo=FALSE}
@@ -710,7 +726,7 @@ barData <- barData %>%
 # =========================
 # (2) Multipanel histograms with ±3 SD highlighting
 # =========================
-long_df <- barData1 %>%
+long_df <- barData1 %>% ###JTM Note: Should we be using the barData file with NA's removed rather than the entire barData file again???
   pivot_longer(cols = all_of(vars), names_to = "variable", values_to = "value") %>%
   filter(!is.na(value)) %>%
   group_by(variable) %>%
@@ -3510,7 +3526,8 @@ Population within a set radius
 Data from: https://search.earthdata.nasa.gov/search?q=CIESIN%20ESDIS
 ```{r, echo=FALSE}
 
-tif_path <- file.path(rootFolder, "Github", "globalBar", "analysis", "data", "population", "gpw_v4_population_count_adjusted_to_2015_unwpp_country_totals_rev11_2020_30_sec.tif")
+##tif_path <- file.path(rootFolder, "Github", "globalBar", "analysis", "data", "population", "gpw_v4_population_count_adjusted_to_2015_unwpp_country_totals_rev11_2020_30_sec.tif") #Original code
+tif_path <- file.path(rootFolder, "data", "population", "gpw_v4_population_count_adjusted_to_2015_unwpp_country_totals_rev11_2020_30_sec.tif")
 
 # Expect: barHumanStats with loc3, latitude, longitude
 stopifnot(all(c("loc3","latitude","longitude") %in% names(barHumanStats)))
@@ -3876,11 +3893,11 @@ barLoc3_merged$basin <- tolower(as.character(barLoc3_merged$basin))
 
 # ====== 2) Responses (from barData) & long format ======
 responses <- c(
-  deltaMass_mgcm2y       = "Δ mass (mg cm^-2 y^-1)",
-  deltaVolume_mm3cm2y    = "Δ volume (mm^3 cm^-2 y^-1)",
-  deltaDensity_mgcm3cm2y = "Δ density (mg cm^-3 cm^-2 y^-1)",
-  macroboring_mm3cm2y    = "Macroboring (mm^3 cm^-2 y^-1)",
-  grazing_mm3cm2y        = "Grazing (mm^3 cm^-2 y^-1)"
+  accretion_mm3cm2y      = "accretion",
+  grazing_mm3cm2y        = "grazing",
+  macroboring_mm3cm2y    = "macroboring",
+  deltaMass_mgcm2y       = "mass",
+  deltaVolume_mm3cm2y    = "volume"
 )
 
 long_dat <- barLoc3_merged %>%
@@ -4072,13 +4089,83 @@ if (!is.null(plot_pop50))  print(plot_pop50)  else message("population_50km_2005
 if (!is.null(plot_pop100)) print(plot_pop100) else message("population_100km_2005 not found—skipping plot.")
 
 ```
+
+### Human pressure as gravity index
+```{r gravityIndex, fig.width=12, fig.height=18, out.width="100%", echo=FALSE}
+
+# 1) Read gravity index (just loc3 + totalGravity)
+grav_path   <- file.path(data_dir, "BMU_gravityIndex.csv")
+gravityData <- readr::read_csv(grav_path, show_col_types = FALSE) %>%
+  dplyr::select(loc3, totalGravity)
+
+# 2) Make sure barData has clean 'basin' and 'loc1.2' columns
+if (!"basin" %in% names(barData)) {
+  if ("basin.x" %in% names(barData)) {
+    barData <- barData %>% dplyr::rename(basin = basin.x)
+  } else if ("basin.y" %in% names(barData)) {
+    barData <- barData %>% dplyr::rename(basin = basin.y)
+  }
+}
+
+if (!"loc1.2" %in% names(barData)) {
+  if ("loc1.2.x" %in% names(barData)) {
+    barData <- barData %>% dplyr::rename(`loc1.2` = `loc1.2.x`)
+  } else if ("loc1.2.y" %in% names(barData)) {
+    barData <- barData %>% dplyr::rename(`loc1.2` = `loc1.2.y`)
+  }
+}
+
+# 3) Add totalGravity to *each row* of barData via loc3
+barData <- barData %>%
+  dplyr::left_join(gravityData, by = "loc3")
+
+# 4) Response variables + pretty labels (same style as your barData code)
+responses <- c(
+  accretion_mm3cm2y      = "accretion",
+  grazing_mm3cm2y        = "grazing",
+  macroboring_mm3cm2y    = "macroboring",
+  deltaMass_mgcm2y       = "mass",
+  deltaVolume_mm3cm2y    = "volume"
+)
+
+# 5) Build a long data frame JUST for totalGravity analysis, using barData
+gravity_long <- barData %>%
+  dplyr::select(
+    loc3, `loc1.2`, basin,
+    dplyr::any_of(names(responses)),
+    totalGravity
+  ) %>%
+  tidyr::pivot_longer(
+    cols      = dplyr::any_of(names(responses)),
+    names_to  = "response_col",
+    values_to = "response_value"
+  ) %>%
+  dplyr::mutate(
+    metric = dplyr::recode(response_col, !!!setNames(unname(responses), names(responses))),
+    response_value = suppressWarnings(as.numeric(response_value)),
+    metric         = factor(metric, levels = unname(responses)),
+    totalGravity   = suppressWarnings(as.numeric(totalGravity)),
+    basin          = tolower(as.character(basin))
+  )
+
+# 6) Make the gravity vs response plot (5 metrics × 3 basin groups)
+plot_gravity <- gravity_long %>%
+  plot_response_vs_x_basin(
+    xvar       = "totalGravity",
+    x_label    = "Total gravity",
+    title_text = "Total Gravity vs. Bar Responses (All / Atlantic / Pacific fits)"
+  )
+
+print(plot_gravity)
+```
+
 # Abstract
 
 The remarkable biodiversity of coral reef is a direct result of complex three-dimensional structures that provides shelter to its inhabitants. This calcium carbonate framework - created by corals - forms the foundation for fundamental goods and services, a natural infrastructure for coastal communities worldwide. Importantly, reef framework, the species that dependent on it and the services we rely on, are threatened by myriad stressors which contribute to the global decline of habitat forming species, all the while accelerating the rate at which habitat is eroded away. Survey-based approaches have been used at regional (REF) and global scales (REF), estimating trajectories that are largely negative and insufficient to keep pace with sea level rise (REF). To date, however, the persistence of reef carbonates has yet to be measured across global scales - a critical knowledge gap that has implications for the countless species that rely on coral reefs, including us. 
 
 
 
-Gravity baby
+
 
 
 
