@@ -327,6 +327,7 @@ plot_loc3_lm_full_atl_pac <- function(
 ```
 
 ```{r dataImportFunctionsAndPath, echo=FALSE}
+setwd("~/GitHub/globalBar/analysis")
 # Constants & Paths
 rootFolder <- getwd()
 ##data_dir   <- file.path(rootFolder, "Github", "globalBar", "analysis", "data") #Original code
