@@ -3529,9 +3529,18 @@ barHumanStats <- loc3_sf %>%
 Population within a set radius
 Data from: https://search.earthdata.nasa.gov/search?q=CIESIN%20ESDIS
 ```{r, echo=FALSE}
+#Ian's work computer
+tif_path <- file.path("C:/Users/ian.enochs/Documents/projects/globar/gpw_v4_population_count_adjusted_to_2015_unwpp_country_totals_rev11_2020_30_sec.tif")
 
-##tif_path <- file.path(rootFolder, "Github", "globalBar", "analysis", "data", "population", "gpw_v4_population_count_adjusted_to_2015_unwpp_country_totals_rev11_2020_30_sec.tif") #Original code
-tif_path <- file.path(rootFolder, "data", "population", "gpw_v4_population_count_adjusted_to_2015_unwpp_country_totals_rev11_2020_30_sec.tif")
+#John's work computer
+if (!file.exists(tif_path)) {
+  tif_path <- file.path(
+    rootFolder,
+    "data", "gpw",
+    "gpw_v4_population_count_adjusted_to_2015_unwpp_country_totals_rev11_2020_30_sec.tif"
+  )
+}
+
 
 # Expect: barHumanStats with loc3, latitude, longitude
 stopifnot(all(c("loc3","latitude","longitude") %in% names(barHumanStats)))
@@ -4132,7 +4141,7 @@ responses <- c(
   deltaVolume_mm3cm2y    = "volume"
 )
 
-# 5) Build a long data frame JUST for totalGravity analysis, using barData
+# 5) Build a long data frame JUST for gravity analysis
 gravity_long <- barData %>%
   dplyr::select(
     loc3, `loc1.2`, basin,
@@ -4152,7 +4161,7 @@ gravity_long <- barData %>%
     basin          = tolower(as.character(basin))
   )
 
-# 6) Make the gravity vs response plot (5 metrics × 3 basin groups)
+# ---- 6) Plot with raw gravity ----
 plot_gravity <- gravity_long %>%
   plot_response_vs_x_basin(
     xvar       = "totalGravity",
@@ -4161,6 +4170,25 @@ plot_gravity <- gravity_long %>%
   )
 
 print(plot_gravity)
+
+# ---- 7) Plot with log-transformed gravity (log10) ----
+gravity_long_log <- gravity_long %>%
+  dplyr::mutate(
+    log_totalGravity = dplyr::if_else(
+      totalGravity > 0,
+      log10(totalGravity),
+      NA_real_
+    )
+  )
+
+plot_gravity_log <- gravity_long_log %>%
+  plot_response_vs_x_basin(
+    xvar       = "log_totalGravity",
+    x_label    = "log10(Total gravity)",
+    title_text = "log10(Total Gravity) vs. Bar Responses (All / Atlantic / Pacific fits)"
+  )
+
+print(plot_gravity_log)
 ```
 
 # Abstract
