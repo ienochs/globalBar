@@ -2654,8 +2654,121 @@ for (var in names(plot_specs)) {
 }
 ```
 
+```{r boxplots_by_loc2_panels, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(patchwork)
 
+# ===== Metrics =====
+panel1_vars <- c(
+  "accretion_mm3cm2y",
+  "macroboring_mm3cm2y",
+  "grazing_mm3cm2y"
+)
 
+metric_labels <- c(
+  accretion_mm3cm2y   = "Accretion",
+  macroboring_mm3cm2y = "Macroboring",
+  grazing_mm3cm2y     = "Grazing"
+)
+
+volume_var <- "deltaVolume_mm3cm2y"
+
+# ===== GLOBAL SHARED Y LIMITS =====
+shared_ylim <- range(
+  c(
+    barData$accretion_mm3cm2y,
+    barData$macroboring_mm3cm2y,
+    barData$grazing_mm3cm2y,
+    barData[[volume_var]]
+  ),
+  na.rm = TRUE
+)
+
+# ===== Loop over islands =====
+for (this_loc2 in sort(unique(barData$loc2))) {
+
+  df_loc2 <- barData %>%
+    filter(loc2 == this_loc2)
+
+  if (nrow(df_loc2) == 0) next
+
+  # ---------- PANEL 1: Accretion / Macroboring / Grazing ----------
+  df_panel1 <- df_loc2 %>%
+    select(all_of(panel1_vars)) %>%
+    pivot_longer(
+      cols = everything(),
+      names_to = "metric",
+      values_to = "value"
+    ) %>%
+    filter(!is.na(value))
+
+  p1 <- ggplot(df_panel1, aes(x = metric, y = value)) +
+    geom_boxplot(
+      fill = "grey30",
+      color = "grey10",
+      outlier.alpha = 0.4,
+      linewidth = 0.6
+    ) +
+    geom_hline(
+      yintercept = 0,
+      linetype   = "dashed",
+      color      = "red",
+      linewidth  = 0.7
+    ) +
+    scale_x_discrete(labels = metric_labels) +
+    ylab(expression(Delta~volume~(mm^3~cm^{-2}~y^{-1}))) +
+    coord_cartesian(ylim = shared_ylim) +
+    theme_minimal(base_size = 20) +
+    theme(
+      axis.title.x      = element_blank(),
+      axis.text.x       = element_text(size = 18, angle = 45, hjust = 1),
+      axis.text.y       = element_text(size = 18),
+      axis.title.y      = element_text(size = 20),
+      panel.grid        = element_blank(),  # remove all gridlines
+      plot.margin       = margin(12, 12, 12, 12),
+      panel.border      = element_rect(color = "black", fill = NA, linewidth = 0.8),
+      panel.background  = element_rect(fill = "white", color = NA)
+    )
+
+  # ---------- PANEL 2: Volume ----------
+  p2 <- ggplot(df_loc2, aes(x = "Volume", y = .data[[volume_var]])) +
+    geom_boxplot(
+      fill = "grey90",
+      color = "grey10",
+      outlier.alpha = 0.4,
+      linewidth = 0.6
+    ) +
+    geom_hline(
+      yintercept = 0,
+      linetype   = "dashed",
+      color      = "red",
+      linewidth  = 0.7
+    ) +
+    xlab(NULL) +
+    ylab(NULL) +
+    coord_cartesian(ylim = shared_ylim) +
+    theme_minimal(base_size = 20) +
+    theme(
+      axis.text.x       = element_text(size = 18, angle = 45, hjust = 1),
+      axis.text.y       = element_blank(),
+      axis.ticks.y      = element_blank(),
+      axis.title.y      = element_blank(),
+      panel.grid        = element_blank(),  # remove all gridlines
+      plot.margin       = margin(12, 12, 12, 12),
+      panel.border      = element_rect(color = "black", fill = NA, linewidth = 0.8),
+      panel.background  = element_rect(fill = "white", color = NA)
+    )
+
+  # ---------- Combine for this island (3:1 widths) ----------
+  p_combined <- (p1 | p2) + plot_layout(widths = c(3, 1))
+
+  cat("\n\n###", this_loc2, "\n\n")
+  print(p_combined)
+  cat("\n\n---\n")
+}
+```
 
 # Exploration of grazing as a driver
 ## BAR data vs. Grazing
