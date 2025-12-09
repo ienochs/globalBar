@@ -135,6 +135,13 @@ myBoxplotStyle <- function(pal = loc_colors,
           coef(sm)[1,1], coef(sm)[2,1], sm$r.squared, coef(sm)[2,4])
 }
 
+# Helper: get p-value for slope term
+.lm_p <- function(df, x, y) {
+  if (nrow(df) < 2) return(NA_real_)
+  sm <- summary(lm(as.formula(paste(y, "~", x)), data = df))
+  sm$coefficients[2, 4]
+}
+
 # find group name match
 .find_level <- function(vals, pattern) {
   u <- unique(vals)
@@ -176,24 +183,45 @@ plot_scatter_lm_full_atl_pac <- function(
   ylimits = NULL,
   col_full = "black", col_atl = "red", col_pac = "blue",
   lw_full = 1.2, lw_group = 0.9, alpha_group = 0.75,
-  label_left = -Inf, label_top = Inf, label_spacing = 1.15
+  label_left = -Inf, label_top = Inf, label_spacing = 1.15,
+  alpha_sig = 0.05
 ) {
   lbl <- .build_labels(df, x, y, group, col_full, col_atl, col_pac)
 
   p <- ggplot(df, aes(x = .data[[x]], y = .data[[y]])) +
-    # regression lines FIRST (drawn under points)
-    geom_smooth(aes(group = 1), method = "lm", se = TRUE,
-                color = col_full, linewidth = lw_full) +
-    {atl <- .find_level(df[[group]], "atlantic");
-     if (!is.na(atl))
-       geom_smooth(data = df[df[[group]] == atl, ],
-                   aes(group = .data[[group]]), method = "lm", se = TRUE,
-                   color = col_atl, alpha = alpha_group, linewidth = lw_group)} +
-    {pac <- .find_level(df[[group]], "pacific");
-     if (!is.na(pac))
-       geom_smooth(data = df[df[[group]] == pac, ],
-                   aes(group = .data[[group]]), method = "lm", se = TRUE,
-                   color = col_pac, alpha = alpha_group, linewidth = lw_group)} +
+    # regression lines FIRST (drawn under points), only if significant
+    {
+      p_full <- .lm_p(df, x, y)
+      if (!is.na(p_full) && p_full < alpha_sig)
+        geom_smooth(aes(group = 1), method = "lm", se = TRUE,
+                    color = col_full, linewidth = lw_full)
+    } +
+    {
+      atl <- .find_level(df[[group]], "atlantic")
+      if (!is.na(atl)) {
+        sub <- df[df[[group]] == atl, ]
+        if (nrow(sub) >= 2) {
+          p_atl <- .lm_p(sub, x, y)
+          if (!is.na(p_atl) && p_atl < alpha_sig)
+            geom_smooth(data = sub,
+                        aes(group = .data[[group]]), method = "lm", se = TRUE,
+                        color = col_atl, alpha = alpha_group, linewidth = lw_group)
+        }
+      }
+    } +
+    {
+      pac <- .find_level(df[[group]], "pacific")
+      if (!is.na(pac)) {
+        sub <- df[df[[group]] == pac, ]
+        if (nrow(sub) >= 2) {
+          p_pac <- .lm_p(sub, x, y)
+          if (!is.na(p_pac) && p_pac < alpha_sig)
+            geom_smooth(data = sub,
+                        aes(group = .data[[group]]), method = "lm", se = TRUE,
+                        color = col_pac, alpha = alpha_group, linewidth = lw_group)
+        }
+      }
+    } +
     # points ON TOP
     geom_point(aes(color = factor(loc1.2), shape = .data[[group]]),
                size = 2, alpha = 0.8) +
@@ -224,24 +252,45 @@ plot_loc2_lm_full_atl_pac <- function(
   ylimits = NULL,
   col_full = "black", col_atl = "red", col_pac = "blue",
   lw_full = 1.2, lw_group = 0.9, alpha_group = 0.75,
-  label_left = -Inf, label_top = Inf, label_spacing = 1.15
+  label_left = -Inf, label_top = Inf, label_spacing = 1.15,
+  alpha_sig = 0.05
 ) {
   lbl <- .build_labels(df, x, y, group, col_full, col_atl, col_pac)
 
   p <- ggplot(df, aes(x = .data[[x]], y = .data[[y]])) +
-    # regressions FIRST
-    geom_smooth(aes(group = 1), method = "lm", se = TRUE,
-                color = col_full, linewidth = lw_full) +
-    {atl <- .find_level(df[[group]], "atlantic");
-     if (!is.na(atl))
-       geom_smooth(data = df[df[[group]] == atl, ],
-                   aes(group = .data[[group]]), method = "lm", se = TRUE,
-                   color = col_atl, alpha = alpha_group, linewidth = lw_group)} +
-    {pac <- .find_level(df[[group]], "pacific");
-     if (!is.na(pac))
-       geom_smooth(data = df[df[[group]] == pac, ],
-                   aes(group = .data[[group]]), method = "lm", se = TRUE,
-                   color = col_pac, alpha = alpha_group, linewidth = lw_group)} +
+    # regression lines FIRST, only if significant
+    {
+      p_full <- .lm_p(df, x, y)
+      if (!is.na(p_full) && p_full < alpha_sig)
+        geom_smooth(aes(group = 1), method = "lm", se = TRUE,
+                    color = col_full, linewidth = lw_full)
+    } +
+    {
+      atl <- .find_level(df[[group]], "atlantic")
+      if (!is.na(atl)) {
+        sub <- df[df[[group]] == atl, ]
+        if (nrow(sub) >= 2) {
+          p_atl <- .lm_p(sub, x, y)
+          if (!is.na(p_atl) && p_atl < alpha_sig)
+            geom_smooth(data = sub,
+                        aes(group = .data[[group]]), method = "lm", se = TRUE,
+                        color = col_atl, alpha = alpha_group, linewidth = lw_group)
+        }
+      }
+    } +
+    {
+      pac <- .find_level(df[[group]], "pacific")
+      if (!is.na(pac)) {
+        sub <- df[df[[group]] == pac, ]
+        if (nrow(sub) >= 2) {
+          p_pac <- .lm_p(sub, x, y)
+          if (!is.na(p_pac) && p_pac < alpha_sig)
+            geom_smooth(data = sub,
+                        aes(group = .data[[group]]), method = "lm", se = TRUE,
+                        color = col_pac, alpha = alpha_group, linewidth = lw_group)
+        }
+      }
+    } +
     # error bars
     geom_errorbar(aes(ymin = .data[[y]] - .data[[sd_y]],
                       ymax = .data[[y]] + .data[[sd_y]]), width = 0.1) +
@@ -271,30 +320,52 @@ plot_loc2_lm_full_atl_pac <- function(
       inherit.aes = FALSE, hjust = -0.05, size = 3.9)
   p
 }
+
 # Loc3-level scatter (labels = loc3, colors = loc1.2) using barStatsLoc3
 plot_loc3_lm_full_atl_pac <- function(
   df, x, y, sd_x, sd_y, xlab, ylab, group = "basin",
   ylimits = NULL,
   col_full = "black", col_atl = "red", col_pac = "blue",
   lw_full = 1.2, lw_group = 0.9, alpha_group = 0.75,
-  label_left = -Inf, label_top = Inf, label_spacing = 1.15
+  label_left = -Inf, label_top = Inf, label_spacing = 1.15,
+  alpha_sig = 0.05
 ) {
   lbl <- .build_labels(df, x, y, group, col_full, col_atl, col_pac)
 
   p <- ggplot(df, aes(x = .data[[x]], y = .data[[y]])) +
-    # regressions FIRST
-    geom_smooth(aes(group = 1), method = "lm", se = TRUE,
-                color = col_full, linewidth = lw_full) +
-    {atl <- .find_level(df[[group]], "atlantic");
-     if (!is.na(atl))
-       geom_smooth(data = df[df[[group]] == atl, ],
-                   aes(group = .data[[group]]), method = "lm", se = TRUE,
-                   color = col_atl, alpha = alpha_group, linewidth = lw_group)} +
-    {pac <- .find_level(df[[group]], "pacific");
-     if (!is.na(pac))
-       geom_smooth(data = df[df[[group]] == pac, ],
-                   aes(group = .data[[group]]), method = "lm", se = TRUE,
-                   color = col_pac, alpha = alpha_group, linewidth = lw_group)} +
+    # regression lines FIRST, only if significant
+    {
+      p_full <- .lm_p(df, x, y)
+      if (!is.na(p_full) && p_full < alpha_sig)
+        geom_smooth(aes(group = 1), method = "lm", se = TRUE,
+                    color = col_full, linewidth = lw_full)
+    } +
+    {
+      atl <- .find_level(df[[group]], "atlantic")
+      if (!is.na(atl)) {
+        sub <- df[df[[group]] == atl, ]
+        if (nrow(sub) >= 2) {
+          p_atl <- .lm_p(sub, x, y)
+          if (!is.na(p_atl) && p_atl < alpha_sig)
+            geom_smooth(data = sub,
+                        aes(group = .data[[group]]), method = "lm", se = TRUE,
+                        color = col_atl, alpha = alpha_group, linewidth = lw_group)
+        }
+      }
+    } +
+    {
+      pac <- .find_level(df[[group]], "pacific")
+      if (!is.na(pac)) {
+        sub <- df[df[[group]] == pac, ]
+        if (nrow(sub) >= 2) {
+          p_pac <- .lm_p(sub, x, y)
+          if (!is.na(p_pac) && p_pac < alpha_sig)
+            geom_smooth(data = sub,
+                        aes(group = .data[[group]]), method = "lm", se = TRUE,
+                        color = col_pac, alpha = alpha_group, linewidth = lw_group)
+        }
+      }
+    } +
     # error bars
     geom_errorbar(aes(ymin = .data[[y]] - .data[[sd_y]],
                       ymax = .data[[y]] + .data[[sd_y]]), width = 0.1) +
