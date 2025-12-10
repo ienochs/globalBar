@@ -2685,6 +2685,10 @@ shared_ylim <- range(
   na.rm = TRUE
 )
 
+# ===== Ensure output folder exists =====
+out_dir <- "regionPlots"
+if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+
 # ===== Loop over islands =====
 for (this_loc2 in sort(unique(barData$loc2))) {
 
@@ -2719,12 +2723,12 @@ for (this_loc2 in sort(unique(barData$loc2))) {
     scale_x_discrete(labels = metric_labels) +
     ylab(expression(Delta~volume~(mm^3~cm^{-2}~y^{-1}))) +
     coord_cartesian(ylim = shared_ylim) +
-    theme_minimal(base_size = 20) +
+    theme_minimal(base_size = 30) +
     theme(
       axis.title.x      = element_blank(),
-      axis.text.x       = element_text(size = 18, angle = 45, hjust = 1),
-      axis.text.y       = element_text(size = 18),
-      axis.title.y      = element_text(size = 20),
+      axis.text.x       = element_text(size = 27, angle = 45, hjust = 1),
+      axis.text.y       = element_text(size = 27),
+      axis.title.y      = element_text(size = 30),
       panel.grid        = element_blank(),  # remove all gridlines
       plot.margin       = margin(12, 12, 12, 12),
       panel.border      = element_rect(color = "black", fill = NA, linewidth = 0.8),
@@ -2748,9 +2752,9 @@ for (this_loc2 in sort(unique(barData$loc2))) {
     xlab(NULL) +
     ylab(NULL) +
     coord_cartesian(ylim = shared_ylim) +
-    theme_minimal(base_size = 20) +
+    theme_minimal(base_size = 30) +
     theme(
-      axis.text.x       = element_text(size = 18, angle = 45, hjust = 1),
+      axis.text.x       = element_text(size = 27, angle = 45, hjust = 1),
       axis.text.y       = element_blank(),
       axis.ticks.y      = element_blank(),
       axis.title.y      = element_blank(),
@@ -2763,11 +2767,277 @@ for (this_loc2 in sort(unique(barData$loc2))) {
   # ---------- Combine for this island (3:1 widths) ----------
   p_combined <- (p1 | p2) + plot_layout(widths = c(3, 1))
 
+  # Print to the document
   cat("\n\n###", this_loc2, "\n\n")
   print(p_combined)
   cat("\n\n---\n")
+
+  # ---------- Save to PDF with 1.5:1 aspect ratio ----------
+  out_file <- file.path(out_dir, paste0("regionPlot_", this_loc2, ".pdf"))
+  ggsave(
+    filename = out_file,
+    plot     = p_combined,
+    width    = 6,   # any values with width/height = 1.5 are fine
+    height   = 6,
+    units    = "in",
+    device   = cairo_pdf
+  )
 }
 ```
+
+
+```{r dotplots_by_loc1_loc2_means, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(stringr)
+
+# ===== Metrics =====
+panel1_vars <- c(
+  "accretion_mm3cm2y",
+  "macroboring_mm3cm2y",
+  "grazing_mm3cm2y"
+)
+
+metric_labels <- c(
+  accretion_mm3cm2y   = "Accretion",
+  macroboring_mm3cm2y = "Macroboring",
+  grazing_mm3cm2y     = "Grazing"
+)
+
+volume_var <- "deltaVolume_mm3cm2y"
+
+metric_labels_full <- c(
+  metric_labels,
+  setNames("Total volume", volume_var)
+)
+
+# ===== GLOBAL SHARED X LIMITS (for horizontal plots) =====
+shared_xlim <- range(
+  c(
+    barData$accretion_mm3cm2y,
+    barData$macroboring_mm3cm2y,
+    barData$grazing_mm3cm2y,
+    barData[[volume_var]]
+  ),
+  na.rm = TRUE
+)
+
+# ===== Harmonious, muted colors for metrics =====
+metric_colors <- c(
+  "Accretion"    = "#2E8B57",  # sea-green
+  "Macroboring"  = "#E69F00",  # muted amber
+  "Grazing"      = "#C44E52",  # muted brick red
+  "Total volume" = "#222222"   # soft black
+)
+
+# Vertical offsets within each loc2 row
+# Grazing (lowest) < Macroboring < Accretion < Total volume (highest)
+offset_map <- c(
+  "Grazing"      = -0.15,
+  "Macroboring"  = -0.05,
+  "Accretion"    =  0.05,
+  "Total volume" =  0.15
+)
+
+# ===== Ensure output folder exists =====
+out_dir <- "regionPlots_loc1_loc2"
+if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+
+# Base width and height scaling
+base_width <- 7           # inches
+base_height_for_three <- 7  # 3 loc2 -> height 7 in
+
+# ===== Loop over loc1 regions =====
+for (this_loc1 in sort(unique(barData$loc1))) {
+
+  df_loc1 <- barData %>%
+    filter(loc1 == this_loc1)
+
+  if (nrow(df_loc1) == 0) next
+
+  # ---------- Long format, then summarise to loc2-level mean + SD ----------
+  df_long <- df_loc1 %>%
+    select(loc2, all_of(c(panel1_vars, volume_var))) %>%
+    pivot_longer(
+      cols      = -loc2,
+      names_to  = "metric",
+      values_to = "value"
+    ) %>%
+    group_by(loc2, metric) %>%
+    summarise(
+      mean = mean(value, na.rm = TRUE),
+      sd   = sd(value,   na.rm = TRUE),
+      n    = sum(!is.na(value)),
+      .groups = "drop"
+    ) %>%
+    filter(!is.na(mean))
+
+  if (nrow(df_long) == 0) next
+
+  # ---------- Metric labels & factor ordering ----------
+  df_long <- df_long %>%
+    mutate(
+      metric_label = metric_labels_full[metric],
+      metric_label = factor(
+        metric_label,
+        levels = c("Accretion", "Macroboring", "Grazing", "Total volume")
+      )
+    )
+
+  # ---------- Base y positions for loc2 with custom ordering per loc1 ----------
+  loc2_levels <- sort(unique(df_long$loc2))
+
+  # Caribbean: Puerto Rico above SaintCroix
+  if (grepl("carib", this_loc1, ignore.case = TRUE)) {
+    idx_pr <- which(grepl("puerto", loc2_levels, ignore.case = TRUE))
+    idx_sc <- which(grepl("croix",  loc2_levels, ignore.case = TRUE))
+    if (length(idx_pr) == 1 && length(idx_sc) == 1 && idx_pr < idx_sc) {
+      tmp <- loc2_levels[idx_pr]
+      loc2_levels[idx_pr] <- loc2_levels[idx_sc]
+      loc2_levels[idx_sc] <- tmp
+    }
+  }
+
+  # Marianas: bottom → top = Guam, Saipan, Pagan, Maug
+  if (grepl("maria", this_loc1, ignore.case = TRUE)) {
+    desired <- c("Guam", "Saipan", "Pagan", "Maug")
+    match_one <- function(target) {
+      hit <- grepl(target, loc2_levels, ignore.case = TRUE)
+      loc2_levels[hit]
+    }
+    ordered_hits <- unlist(lapply(desired, match_one))
+    ordered_hits <- unique(ordered_hits)
+    others <- setdiff(loc2_levels, ordered_hits)
+    loc2_levels <- c(ordered_hits, others)
+  }
+
+  # Samoa: bottom → top = Tutuila, Tau, Ofu
+  if (grepl("samoa", this_loc1, ignore.case = TRUE)) {
+    desired <- c("Tutuila", "Tau", "Ofu")
+    match_one <- function(target) {
+      hit <- grepl(target, loc2_levels, ignore.case = TRUE)
+      loc2_levels[hit]
+    }
+    ordered_hits <- unlist(lapply(desired, match_one))
+    ordered_hits <- unique(ordered_hits)
+    others <- setdiff(loc2_levels, ordered_hits)
+    loc2_levels <- c(ordered_hits, others)
+  }
+
+  df_long <- df_long %>%
+    mutate(
+      loc2_factor = factor(loc2, levels = loc2_levels),
+      y_base      = as.numeric(loc2_factor),
+      y_pos       = y_base + offset_map[as.character(metric_label)],
+      sd          = ifelse(is.na(sd), 0, sd)   # single obs -> zero-width bar
+    )
+
+  # ---------- Pretty loc2 labels (capitalized) ----------
+  loc2_labels_pretty <- stringr::str_to_title(loc2_levels)
+
+  # ---------- Pretty loc1 title using explicit mapping ----------
+  loc1_pretty <- dplyr::recode(
+    this_loc1,
+    "caribbean"                = "Caribbean",
+    "florida"                  = "Florida",
+    "flowerGardenBanks"        = "Flower Garden Banks",
+    "marianas"                 = "Marianas",
+    "middleHawaiianIslands"    = "Middle Hawaiian Islands",
+    "northwestHawaiianIslands" = "Northwest Hawaiian Islands",
+    "pacificRemoteIslandArea"  = "Pacific Remote Island Area",
+    "samoa"                    = "American Samoa",
+    .default                   = this_loc1
+  )
+
+  # ---------- Horizontal dot plot with error bars ----------
+  p_loc1 <- ggplot(
+    df_long,
+    aes(x = mean, y = y_pos, color = metric_label)
+  ) +
+    geom_vline(
+      xintercept = 0,
+      linetype   = "dashed",
+      linewidth  = 0.7
+    ) +
+    # Error bars WITHOUT caps (all except Total volume)
+    geom_errorbarh(
+      data = df_long %>% dplyr::filter(metric_label != "Total volume"),
+      aes(
+        xmin = mean - sd,
+        xmax = mean + sd,
+        y    = y_pos
+      ),
+      height    = 0,
+      linewidth = 0.8
+    ) +
+    # Error bars WITH caps (Total volume ONLY)
+    geom_errorbarh(
+      data = df_long %>% dplyr::filter(metric_label == "Total volume"),
+      aes(
+        xmin = mean - sd,
+        xmax = mean + sd,
+        y    = y_pos
+      ),
+      height    = 0.08,  # small caps only for Total volume
+      linewidth = 1.6
+    ) +
+    geom_point(
+      aes(
+        size = ifelse(metric_label == "Total volume", 5.5, 3.8)
+      ),
+      alpha = 0.9
+    ) +
+    scale_color_manual(
+      name   = NULL,
+      values = metric_colors
+    ) +
+    scale_size_identity() +
+    coord_cartesian(xlim = shared_xlim) +
+    scale_y_continuous(
+      breaks = seq_along(loc2_levels),
+      labels = loc2_labels_pretty   # <- capitalized loc2 names
+    ) +
+    xlab(expression(Delta~volume~(mm^3~cm^{-2}~y^{-1}))) +
+    ylab(NULL) +
+    ggtitle(loc1_pretty) +
+    theme_minimal(base_size = 28) +
+    theme(
+      axis.text.x      = element_text(size = 24),
+      axis.text.y      = element_text(size = 22),
+      axis.title.x     = element_text(size = 28),
+      axis.title.y     = element_blank(),
+      plot.title       = element_text(size = 30, face = "bold", hjust = 0.5),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.border     = element_rect(color = "black", fill = NA, linewidth = 0.8),
+      panel.background = element_rect(fill = "white", color = NA),
+      legend.position  = "none",
+      plot.margin      = margin(12, 12, 12, 12)
+    )
+
+  # Print to the document
+  cat("\n\n###", loc1_pretty, "\n\n")
+  print(p_loc1)
+  cat("\n\n---\n")
+
+  # ---------- Dynamic height based on number of loc2 ----------
+  n_loc2   <- length(loc2_levels)
+  out_hgt  <- base_height_for_three * (n_loc2 / 3)
+
+  # ---------- Save to PDF ----------
+  out_file <- file.path(out_dir, paste0("regionPlot_loc1_", this_loc1, ".pdf"))
+  ggsave(
+    filename = out_file,
+    plot     = p_loc1,
+    width    = base_width,
+    height   = out_hgt,
+    units    = "in",
+    device   = cairo_pdf
+  )
+}
+```
+
 
 # Exploration of grazing as a driver
 ## BAR data vs. Grazing
@@ -3916,6 +4186,162 @@ plot_arag_loc3 <- arag_loc3_long %>%
 
 print(plot_arag_loc3)
 ```
+
+```{r accretion_vs_arag_loc2_lm_loccolors, fig.width=9, fig.height=7, echo=FALSE}
+
+library(dplyr)
+library(ggplot2)
+
+# 1) Subset to rows with needed data and only Atlantic/Pacific
+acc_arag_loc2 <- siteStatsBottleEnv %>%
+  dplyr::filter(
+    !is.na(meanAccretion),
+    !is.na(mean_AragSatState),
+    basin %in% c("atlantic", "pacific")
+  )
+
+# 2) Fit separate LMs for each basin and extract stats
+lm_stats <- acc_arag_loc2 %>%
+  dplyr::group_by(basin) %>%
+  dplyr::summarise(
+    n = sum(complete.cases(mean_AragSatState, meanAccretion)),
+    lm_ok = n > 2 &&
+      stats::var(mean_AragSatState, na.rm = TRUE) > 0 &&
+      stats::var(meanAccretion, na.rm = TRUE) > 0,
+    model = if (lm_ok[1]) list(stats::lm(meanAccretion ~ mean_AragSatState))
+            else list(NULL),
+    .groups = "drop"
+  ) %>%
+  dplyr::rowwise() %>%
+  dplyr::mutate(
+    R2 = if (!is.null(model)) summary(model)$r.squared else NA_real_,
+    p  = if (!is.null(model)) summary(model)$coefficients[2, 4] else NA_real_,
+    a  = if (!is.null(model)) stats::coef(model)[1] else NA_real_,  # intercept
+    b  = if (!is.null(model)) stats::coef(model)[2] else NA_real_,  # slope
+    label = paste0(
+      "y = ", formatC(a, digits = 3, format = "f"),
+      " + ", formatC(b, digits = 3, format = "f"), "x\n",
+      "R² = ", formatC(R2, digits = 2, format = "f"),
+      ", p = ", formatC(p, format = "e", digits = 2)
+    ),
+    is_sig = !is.na(p) && p < 0.05
+  ) %>%
+  dplyr::ungroup()
+
+# 3) Choose label positions within each basin's data range
+label_pos <- acc_arag_loc2 %>%
+  dplyr::group_by(basin) %>%
+  dplyr::summarise(
+    x_min = min(mean_AragSatState, na.rm = TRUE),
+    x_max = max(mean_AragSatState, na.rm = TRUE),
+    y_min = min(meanAccretion, na.rm = TRUE),
+    y_max = max(meanAccretion, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  dplyr::mutate(
+    xr = x_max - x_min,
+    yr = y_max - y_min,
+    x  = x_min + 0.05 * xr,
+    y  = y_max - 0.05 * yr
+  ) %>%
+  dplyr::select(basin, x, y)
+
+lm_labels <- dplyr::left_join(lm_stats, label_pos, by = "basin")
+
+# basins where LM is significant
+sig_basins <- lm_stats %>%
+  dplyr::filter(is_sig, lm_ok) %>%
+  dplyr::pull(basin)
+
+# 4) Color scale from loc_colors (tied to loc1.2)
+color_scale <- if (exists("loc_colors", inherits = TRUE)) {
+  scale_color_manual(values = loc_colors, na.translate = FALSE)
+} else {
+  scale_color_discrete()
+}
+
+# 5) Final plot: points, x/y error bars, significant basin-specific LMs, labels
+gg_acc_arag_loc2_lm <- ggplot(
+  acc_arag_loc2,
+  aes(
+    x = mean_AragSatState,
+    y = meanAccretion,
+    color = factor(loc1.2)
+  )
+) +
+  # points at each loc2
+  geom_point(size = 3) +
+
+  # label points by loc2
+  geom_text(
+    aes(label = loc2),
+    vjust = -0.8,
+    show.legend = FALSE,
+    size = 3
+  ) +
+
+  # vertical error bars (accretion)
+  geom_errorbar(
+    aes(
+      ymin = meanAccretion - seAccretion,
+      ymax = meanAccretion + seAccretion
+    ),
+    width = 0
+  ) +
+
+  # horizontal error bars (Ωarag)
+  geom_errorbarh(
+    aes(
+      xmin = mean_AragSatState - se_AragSatState,
+      xmax = mean_AragSatState + se_AragSatState
+    ),
+    height = 0
+  ) +
+
+  # basin-specific regression lines (only for significant basins)
+  geom_smooth(
+    data = acc_arag_loc2 %>% dplyr::filter(basin %in% sig_basins),
+    aes(
+      x = mean_AragSatState,
+      y = meanAccretion,
+      linetype = basin,
+      group = basin
+    ),
+    method = "lm",
+    se = TRUE,
+    linewidth = 1,
+    color = "black",
+    inherit.aes = FALSE
+  ) +
+
+  # LM labels (equation, R², p) only for significant basins
+  geom_text(
+    data = lm_labels %>% dplyr::filter(is_sig, lm_ok),
+    aes(x = x, y = y, label = label),
+    inherit.aes = FALSE,
+    hjust = 0,
+    vjust = 1,
+    size = 4
+  ) +
+
+  color_scale +
+  scale_linetype_discrete(name = "Basin") +
+
+  labs(
+    x = expression(Omega[arag] ~ "(mean ± SE)"),
+    y = "Accretion (mean ± SE)",
+    color = "loc1.2",
+    title = expression("Accretion vs " * Omega[arag] * " by loc2")
+  ) +
+  theme_minimal(base_size = 15) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "none"
+  )
+
+print(gg_acc_arag_loc2_lm)
+```
+
 
 
 # Multivariate analysis
