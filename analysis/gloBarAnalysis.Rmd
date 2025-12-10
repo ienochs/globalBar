@@ -2522,7 +2522,6 @@ ts_PHYTO
 
 ```
 
-
 # Spatial analysis of BAR data
 ## Statistical model of BAR data by loc2 in loc1
 ```{r nestedModelsPrint, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
@@ -3403,6 +3402,7 @@ print(plot_list[["accretion_mm3cm2y"]])
 
 
 # Exploration of environmental data as a driver
+## Satellite environmental data
 ```{r, echo=FALSE, results='hide', message=FALSE, warning=FALSE, fig.width=18, fig.height=14}
 # Cleaner to avoid lm() errors from NaN/Inf ---
 clean_numeric <- function(df) {
@@ -3558,6 +3558,363 @@ Macroboring_env_grid
 Grazing_env_grid
 Accretion_env_grid
 ```
+
+## Aragonite saturation state as a driver
+### AragSatState by loc2
+```{r aragSatState Loc2, fig.width=18, fig.height=14, echo=FALSE}
+
+# ====== 1) Load bottle data ======
+bottle_dir   <- file.path(rootFolder, "data", "bottleData")
+bottleLoc2_path <- file.path(bottle_dir, "bottleData_BMUs_loc2.csv")
+
+bottleData_loc2 <- read_csv(bottleLoc2_path, show_col_types = FALSE)
+
+bottleStatsLoc2 <- bottleData_loc2 %>%
+  dplyr::group_by(basin, loc1, loc2) %>%
+  dplyr::summarise(
+    n_bottle = dplyr::n(),
+    
+    mean_TempInField_degC = mean(TempInField_degC, na.rm = TRUE),
+    se_TempInField_degC   = sd(TempInField_degC,   na.rm = TRUE) / sqrt(n_bottle),
+    
+    mean_Salinity_PSU = mean(Salinity_PSU, na.rm = TRUE),
+    se_Salinity_PSU   = sd(Salinity_PSU,   na.rm = TRUE) / sqrt(n_bottle),
+    
+    mean_AragSatState = mean(AragSatState, na.rm = TRUE),
+    se_AragSatState   = sd(AragSatState,   na.rm = TRUE) / sqrt(n_bottle),
+    
+    mean_pCO2_uatm = mean(pCO2_uatm, na.rm = TRUE),
+    se_pCO2_uatm   = sd(pCO2_uatm,   na.rm = TRUE) / sqrt(n_bottle),
+    
+    mean_pH_calculated = mean(pH_calculated, na.rm = TRUE),
+    se_pH_calculated   = sd(pH_calculated,   na.rm = TRUE) / sqrt(n_bottle),
+    
+    mean_TA_umolperkg = mean(TA_umolperkg, na.rm = TRUE),
+    se_TA_umolperkg   = sd(TA_umolperkg,   na.rm = TRUE) / sqrt(n_bottle),
+    
+    mean_DIC_umolperkg = mean(DIC_umolperkg, na.rm = TRUE),
+    se_DIC_umolperkg   = sd(DIC_umolperkg,   na.rm = TRUE) / sqrt(n_bottle),
+    
+    .groups = "drop"
+  )
+
+# ====== 2) Make sure everything numeric is "clean" ======
+clean_numeric <- function(df) {
+  df %>%
+    dplyr::mutate(
+      dplyr::across(
+        where(is.numeric),
+        \(v) { v[is.nan(v) | is.infinite(v)] <- NA_real_; v }
+      )
+    )
+}
+
+barStatsLoc2    <- clean_numeric(barStatsLoc2)
+bottleStatsLoc2 <- clean_numeric(bottleStatsLoc2)
+
+
+# ======  3) Build joined table with all response + bottle env data ====== 
+siteStatsBottleEnv <- barStatsLoc2 %>%
+  dplyr::select(
+    basin, loc1, loc2, loc1.2,
+    meanDeltaMass,   seDeltaMass,
+    meanDeltaVolume, seDeltaVolume,
+    meanDeltaDensity,seDeltaDensity,
+    meanMacroboring, seMacroboring,
+    meanGrazing,     seGrazing,
+    meanAccretion,   seAccretion
+  ) %>%
+  dplyr::inner_join(
+    bottleStatsLoc2 %>%
+      dplyr::select(
+        basin, loc1, loc2,
+        n_bottle,
+        mean_TempInField_degC, se_TempInField_degC,
+        mean_Salinity_PSU,     se_Salinity_PSU,
+        mean_AragSatState,     se_AragSatState,
+        mean_pCO2_uatm,        se_pCO2_uatm,
+        mean_pH_calculated,    se_pH_calculated,
+        mean_TA_umolperkg,     se_TA_umolperkg,
+        mean_DIC_umolperkg,    se_DIC_umolperkg
+      ),
+    by = c("basin", "loc1", "loc2")
+  )
+
+# ====== 4) Build long table for response ~ Ωarag analysis ======
+responses <- c(
+  accretion   = "meanAccretion",
+  grazing     = "meanGrazing",
+  macroboring = "meanMacroboring",
+  mass        = "meanDeltaMass",
+  volume      = "meanDeltaVolume"
+)
+
+resp_cols   <- unname(responses)   # underlying column names
+resp_labels <- names(responses)    # "accretion", "grazing", ...
+
+arag_long <- siteStatsBottleEnv %>%
+  dplyr::select(
+    basin, loc1, loc2, loc1.2,
+    dplyr::any_of(resp_cols),
+    mean_AragSatState
+  ) %>%
+  tidyr::pivot_longer(
+    cols      = dplyr::any_of(resp_cols),
+    names_to  = "response_col",
+    values_to = "response_value"
+  ) %>%
+  dplyr::mutate(
+    # response_col is the column name (e.g. "meanAccretion")
+    metric = dplyr::recode(response_col, !!!setNames(resp_labels, resp_cols)),
+    metric = factor(metric, levels = resp_labels),   # lock facet order
+    response_value    = suppressWarnings(as.numeric(response_value)),
+    mean_AragSatState = suppressWarnings(as.numeric(mean_AragSatState)),
+    basin             = tolower(as.character(basin))
+  )
+
+# ====== 5) Helper functions for per-basin regression plots (same pattern as human-pressure code) ======
+interpret_model <- function(R2, p) {
+  if (is.na(R2) || is.na(p)) return("insufficient data")
+  if (p >= 0.05) return("not significant")
+  if (R2 < 0.10) return("weak but significant")
+  if (R2 < 0.30) return("moderate")
+  "strong"
+}
+
+make_basin_fit_data <- function(df, xvar) {
+  df_base <- df %>% dplyr::filter(!is.na(response_value))
+  
+  dplyr::bind_rows(
+    df_base %>% dplyr::mutate(fit_group = "All data"),
+    df_base %>%
+      dplyr::filter(basin == "atlantic") %>%
+      dplyr::mutate(fit_group = "Atlantic"),
+    df_base %>%
+      dplyr::filter(basin == "pacific") %>%
+      dplyr::mutate(fit_group = "Pacific")
+  ) %>%
+    dplyr::filter(!is.na(.data[[xvar]])) %>%
+    dplyr::mutate(
+      fit_group = factor(fit_group,
+                         levels = c("All data", "Atlantic", "Pacific"))
+    )
+}
+
+facet_lm_stats_basin <- function(df, xvar) {
+  df_long <- make_basin_fit_data(df, xvar)
+  
+  df_long %>%
+    dplyr::group_by(metric, fit_group) %>%
+    dplyr::reframe({
+      x <- suppressWarnings(as.numeric(.data[[xvar]]))
+      y <- suppressWarnings(as.numeric(response_value))
+      n <- sum(stats::complete.cases(x, y))
+      
+      ok <- (n > 2) &&
+        is.finite(stats::var(x, na.rm = TRUE)) && stats::var(x, na.rm = TRUE) > 0 &&
+        is.finite(stats::var(y, na.rm = TRUE)) && stats::var(y, na.rm = TRUE) > 0
+      
+      if (ok) {
+        fit <- stats::lm(y ~ x)
+        s   <- summary(fit)
+        R2    <- unname(s$r.squared)
+        p     <- unname(s$coefficients[2, 4])
+        slope <- unname(stats::coef(fit)[2])
+      } else {
+        R2 <- NA_real_; p <- NA_real_; slope <- NA_real_
+      }
+      
+      x_min <- suppressWarnings(min(x, na.rm = TRUE))
+      x_max <- suppressWarnings(max(x, na.rm = TRUE))
+      y_min <- suppressWarnings(min(y, na.rm = TRUE))
+      y_max <- suppressWarnings(max(y, na.rm = TRUE))
+      
+      xr <- if (is.finite(x_max - x_min)) x_max - x_min else 0
+      yr <- if (is.finite(y_max - y_min)) y_max - y_min else 0
+      
+      x_pos <- x_min + (if (xr == 0) 0.02 * (if (x_max == 0) 1 else abs(x_max))
+                        else 0.02 * xr)
+      y_pos <- y_max - (if (yr == 0) 0.02 * (if (y_max == 0) 1 else abs(y_max))
+                        else 0.02 * yr)
+      
+      interp <- interpret_model(R2, p)
+      label <- paste0(
+        "R² = ", ifelse(is.na(R2), "NA", sprintf("%.2f", R2)),
+        ", p = ", ifelse(is.na(p), "NA", formatC(p, format = "e", digits = 2)),
+        ", n = ", n,
+        "\nslope = ", ifelse(is.na(slope), "NA",
+                             formatC(slope, format = "g", digits = 3)),
+        "  (", interp, ")"
+      )
+      
+      is_sig <- !is.na(p) && p < 0.05
+      text_col <- if (is_sig) "#1B9E77" else "grey20"
+      
+      tibble(x_pos = x_pos, y_pos = y_pos, label = label, text_col = text_col)
+    })
+}
+
+plot_response_vs_x_basin <- function(df, xvar, x_label, title_text) {
+  df_long <- make_basin_fit_data(df, xvar)
+  labs_df <- facet_lm_stats_basin(df, xvar)
+  
+  color_scale <- if (exists("loc_colors", inherits = TRUE)) {
+    scale_color_manual(values = loc_colors)
+  } else {
+    scale_color_discrete()
+  }
+  
+  ggplot(df_long, aes(x = .data[[xvar]], y = response_value)) +
+    geom_point(aes(color = factor(`loc1.2`)), alpha = 0.85) +
+    color_scale +
+    geom_smooth(aes(group = 1), method = "lm", se = TRUE, color = "black") +
+    ggh4x::facet_grid2(
+      rows  = vars(fit_group),
+      cols  = vars(metric),
+      scales = "free_y",
+      independent = "y"
+    ) +
+    geom_text(
+      data = labs_df,
+      aes(x = x_pos, y = y_pos, label = label, color = I(text_col)),
+      inherit.aes = FALSE,
+      hjust = 0, vjust = 1, size = 3
+    ) +
+    labs(title = title_text, x = x_label, y = NULL) +
+    theme_minimal(base_size = 12) +
+    theme(
+      plot.title = element_text(face = "bold"),
+      strip.text = element_text(face = "bold"),
+      panel.grid.minor = element_blank(),
+      legend.position = "none"
+    )
+}
+
+# ====== 6) Plot responses vs Ωarag (All / Atlantic / Pacific fits) ======
+plot_arag <- arag_long %>%
+  plot_response_vs_x_basin(
+    xvar       = "mean_AragSatState",
+    x_label    = expression(Omega[arag]),
+    title_text = expression(Omega[arag] ~ "vs. Bar Responses (All / Atlantic / Pacific fits)")
+  )
+
+print(plot_arag)
+```
+
+### AragSatState by loc3
+```{r aragSatState Loc3, fig.width=18, fig.height=14, echo=FALSE}
+
+# ====== 1) Load bottle data ======
+bottleLoc3_path <- file.path(bottle_dir, "bottleData_BMUs_loc3.csv")
+
+bottleData_loc3 <- read_csv(bottleLoc3_path, show_col_types = FALSE)
+
+bottleStatsLoc3 <- bottleData_loc3 %>%
+  dplyr::group_by(basin, loc1, loc2, loc3) %>%
+  dplyr::summarise(
+    n_bottle = dplyr::n(),
+
+    mean_TempInField_degC = mean(TempInField_degC, na.rm = TRUE),
+    se_TempInField_degC   = sd(TempInField_degC,   na.rm = TRUE) / sqrt(n_bottle),
+
+    mean_Salinity_PSU = mean(Salinity_PSU, na.rm = TRUE),
+    se_Salinity_PSU   = sd(Salinity_PSU,   na.rm = TRUE) / sqrt(n_bottle),
+
+    mean_AragSatState = mean(AragSatState, na.rm = TRUE),
+    se_AragSatState   = sd(AragSatState,   na.rm = TRUE) / sqrt(n_bottle),
+
+    mean_pCO2_uatm = mean(pCO2_uatm, na.rm = TRUE),
+    se_pCO2_uatm   = sd(pCO2_uatm,   na.rm = TRUE) / sqrt(n_bottle),
+
+    mean_pH_calculated = mean(pH_calculated, na.rm = TRUE),
+    se_pH_calculated   = sd(pH_calculated,   na.rm = TRUE) / sqrt(n_bottle),
+
+    mean_TA_umolperkg = mean(TA_umolperkg, na.rm = TRUE),
+    se_TA_umolperkg   = sd(TA_umolperkg,   na.rm = TRUE) / sqrt(n_bottle),
+
+    mean_DIC_umolperkg = mean(DIC_umolperkg, na.rm = TRUE),
+    se_DIC_umolperkg   = sd(DIC_umolperkg,   na.rm = TRUE) / sqrt(n_bottle),
+
+    .groups = "drop"
+  )
+
+# ====== 2) Clean numerics (reuse clean_numeric from loc2 chunk) ======
+barStatsLoc3    <- clean_numeric(barStatsLoc3)
+bottleStatsLoc3 <- clean_numeric(bottleStatsLoc3)
+
+# ====== 3) Join BAR loc3 stats with bottle env stats ======
+siteStatsBottleEnvLoc3 <- barStatsLoc3 %>%
+  dplyr::select(
+    basin, loc1, loc2, loc3, loc1.2,
+    meanDeltaMass,   seDeltaMass,
+    meanDeltaVolume, seDeltaVolume,
+    meanDeltaDensity,seDeltaDensity,
+    meanMacroboring, seMacroboring,
+    meanGrazing,     seGrazing,
+    meanAccretion,   seAccretion
+  ) %>%
+  dplyr::inner_join(
+    bottleStatsLoc3 %>%
+      dplyr::select(
+        basin, loc1, loc2, loc3,
+        n_bottle,
+        mean_TempInField_degC, se_TempInField_degC,
+        mean_Salinity_PSU,     se_Salinity_PSU,
+        mean_AragSatState,     se_AragSatState,
+        mean_pCO2_uatm,        se_pCO2_uatm,
+        mean_pH_calculated,    se_pH_calculated,
+        mean_TA_umolperkg,     se_TA_umolperkg,
+        mean_DIC_umolperkg,    se_DIC_umolperkg
+      ),
+    by = c("basin", "loc1", "loc2", "loc3")
+  )
+
+# This inner_join automatically:
+# - drops loc3 with no bottle data
+# - keeps loc3 with a single bottle (n_bottle = 1) — they'll still appear in plots
+
+# ====== 4) Build long table for response ~ Ωarag analysis (loc3) ======
+responses <- c(
+  accretion   = "meanAccretion",
+  grazing     = "meanGrazing",
+  macroboring = "meanMacroboring",
+  mass        = "meanDeltaMass",
+  volume      = "meanDeltaVolume"
+)
+
+resp_cols   <- unname(responses)    # actual column names
+resp_labels <- names(responses)     # "accretion", "grazing", ...
+
+arag_loc3_long <- siteStatsBottleEnvLoc3 %>%
+  dplyr::select(
+    basin, loc1, loc2, loc3, loc1.2,
+    dplyr::any_of(resp_cols),
+    mean_AragSatState
+  ) %>%
+  tidyr::pivot_longer(
+    cols      = dplyr::any_of(resp_cols),
+    names_to  = "response_col",
+    values_to = "response_value"
+  ) %>%
+  dplyr::mutate(
+    metric = dplyr::recode(response_col, !!!setNames(resp_labels, resp_cols)),
+    metric = factor(metric, levels = resp_labels),  # facet order: accretion → grazing → macroboring → mass → volume
+    response_value    = suppressWarnings(as.numeric(response_value)),
+    mean_AragSatState = suppressWarnings(as.numeric(mean_AragSatState)),
+    basin             = tolower(as.character(basin))
+  )
+
+# ====== 5) Plot responses vs Ωarag (All / Atlantic / Pacific fits) ======
+plot_arag_loc3 <- arag_loc3_long %>%
+  plot_response_vs_x_basin(
+    xvar       = "mean_AragSatState",
+    x_label    = expression(Omega[arag]),
+    title_text = expression(Omega[arag] ~ "vs. Bar Responses by loc3 (All / Atlantic / Pacific fits)")
+  )
+
+print(plot_arag_loc3)
+```
+
 
 # Multivariate analysis
 ```{r, multivariateAnalysis, echo=FALSE}
