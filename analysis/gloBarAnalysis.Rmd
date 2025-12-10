@@ -3646,7 +3646,8 @@ responses <- c(
   grazing     = "meanGrazing",
   macroboring = "meanMacroboring",
   mass        = "meanDeltaMass",
-  volume      = "meanDeltaVolume"
+  volume      = "meanDeltaVolume",
+  density     = "meanDeltaDensity"
 )
 
 resp_cols   <- unname(responses)   # underlying column names
@@ -3879,7 +3880,8 @@ responses <- c(
   grazing     = "meanGrazing",
   macroboring = "meanMacroboring",
   mass        = "meanDeltaMass",
-  volume      = "meanDeltaVolume"
+  volume      = "meanDeltaVolume",
+  density     = "meanDeltaDensity"
 )
 
 resp_cols   <- unname(responses)    # actual column names
