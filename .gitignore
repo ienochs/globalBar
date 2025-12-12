@@ -30,3 +30,4 @@ vignettes/*.pdf
 # Because Ana told me to:
 **/.DS_Store
 
+analysis/gloBarAnalysis.html
