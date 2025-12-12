@@ -4187,7 +4187,7 @@ plot_arag_loc3 <- arag_loc3_long %>%
 print(plot_arag_loc3)
 ```
 
-```{r accretion_vs_arag_loc2_lm_loccolors, fig.width=9, fig.height=7, echo=FALSE}
+```{r accretion_vs_arag_loc2_lm_loccolors, fig.width=7, fig.height=7, echo=FALSE}
 
 library(dplyr)
 library(ggplot2)
@@ -4272,12 +4272,12 @@ gg_acc_arag_loc2_lm <- ggplot(
   # points at each loc2
   geom_point(size = 3) +
 
-  # label points by loc2
+  # label points by loc2 (CAPS, larger)
   geom_text(
-    aes(label = loc2),
+    aes(label = tools::toTitleCase(as.character(loc2))),
     vjust = -0.8,
     show.legend = FALSE,
-    size = 3
+    size = 5
   ) +
 
   # vertical error bars (accretion)
@@ -4330,13 +4330,28 @@ gg_acc_arag_loc2_lm <- ggplot(
   labs(
     x = expression(Omega[arag] ~ "(mean ± SE)"),
     y = "Accretion (mean ± SE)",
-    color = "loc1.2",
-    title = expression("Accretion vs " * Omega[arag] * " by loc2")
+    color = "loc1.2"
+    # title removed
   ) +
-  theme_minimal(base_size = 15) +
+  theme_classic(base_size = 18) +
   theme(
-    plot.title = element_text(face = "bold"),
-    legend.position = "none"
+    # remove gridlines just in case
+    panel.grid = element_blank(),
+
+    # bigger axis titles and tick labels
+    axis.title = element_text(size = 22),
+    axis.text  = element_text(size = 18),
+
+    # black box around plotting region
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+
+    # let the box be the frame (no extra axis lines)
+    axis.line = element_blank(),
+
+    legend.position = "none",
+
+    # enforce square panel shape
+    aspect.ratio = 1
   )
 
 print(gg_acc_arag_loc2_lm)
