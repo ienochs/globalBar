@@ -646,6 +646,7 @@ read_bind_excel <- function(paths, sheet = NULL) {
 barData_raw <-
   read_bind_excel(c(atl_path, pac_path, dec2025Update_path)) %>%
   drop_all_na_rows()
+
 # Read & Bind Parrot Community Data
 parrotCommunityData <- read_bind_csv(c(atl_comm_path, pac_comm_path), ct) %>%
   drop_all_na_rows()
@@ -668,6 +669,66 @@ barData_raw <- barData_raw %>%
       TRUE ~ siteName
           )
   )
+#Fix depths in the Pacific
+depth_csv_path <- file.path(data_dir, "barData_pac_depths.csv")
+# --- read + prep depth table ---
+pac_depths <- readr::read_csv(depth_csv_path, show_col_types = FALSE) %>%
+  dplyr::mutate(siteName = trimws(siteName))
+
+# If your CSV depth column is not literally named "depth", set it here:
+# (leave as-is if your CSV column name is already depth)
+depth_col_in_csv <- "depth"
+
+stopifnot("siteName" %in% names(pac_depths))
+stopifnot(depth_col_in_csv %in% names(pac_depths))
+
+pac_depths2 <- pac_depths %>%
+  dplyr::select(siteName, depth_new = all_of(depth_col_in_csv)) %>%
+  dplyr::filter(!is.na(siteName), siteName != "") %>%
+  # if duplicates exist, keep the first non-NA depth
+  dplyr::group_by(siteName) %>%
+  dplyr::summarise(depth_new = dplyr::first(na.omit(depth_new)), .groups = "drop")
+
+# --- normalize siteName in barData_raw ---
+barData_raw <- barData_raw %>%
+  dplyr::mutate(siteName = trimws(siteName))
+
+stopifnot("siteName" %in% names(barData_raw))
+stopifnot("basin" %in% names(barData_raw))
+stopifnot("depth" %in% names(barData_raw))  # change if your depth field has a different name
+
+# --- unmatched lists (both directions) ---
+pac_sites_in_bar <- barData_raw %>%
+  dplyr::filter(tolower(basin) == "pacific") %>%
+  dplyr::distinct(siteName) %>%
+  dplyr::filter(!is.na(siteName), siteName != "")
+
+sites_in_csv <- pac_depths2 %>%
+  dplyr::distinct(siteName) %>%
+  dplyr::filter(!is.na(siteName), siteName != "")
+
+siteNames_missing_in_csv <- setdiff(pac_sites_in_bar$siteName, sites_in_csv$siteName)
+siteNames_missing_in_bar <- setdiff(sites_in_csv$siteName, pac_sites_in_bar$siteName)
+
+unmatched_siteNames <- list(
+  in_barData_raw_pacific_but_not_in_csv = sort(siteNames_missing_in_csv),
+  in_csv_but_not_in_barData_raw_pacific = sort(siteNames_missing_in_bar)
+)
+
+# --- update depth ONLY for pacific rows ---
+barData_raw_updated <- barData_raw %>%
+  dplyr::left_join(pac_depths2, by = "siteName") %>%
+  dplyr::mutate(
+    depth = dplyr::if_else(tolower(basin) == "pacific" & !is.na(depth_new), depth_new, depth)
+  ) %>%
+  dplyr::select(-depth_new)
+
+# --- results ---
+# 1) updated data frame:
+barData_raw <- barData_raw_updated
+
+# 2) list of siteNames with no match either direction:
+unmatched_siteNames
 ```
 
 ```{r creatLocFields, echo=FALSE}
@@ -715,8 +776,6 @@ environmentalData <- environmentalData_raw %>%
                      dataset_type = "env", lat = lat)), sep = "-"),
     loc1.2 = paste(loc1, loc2, sep = ".")
   )
-
-
 ```
 
 ```{r calculateBarRates, echo=FALSE}
@@ -4266,13 +4325,14 @@ gg_acc_arag_loc2_lm <- ggplot(
   aes(
     x = mean_AragSatState,
     y = meanAccretion,
-    color = factor(loc1.2)
+    color = factor(loc1.2),
+    shape = basin               # <---- ADDED
   )
 ) +
   # points at each loc2
   geom_point(size = 3) +
 
-  # label points by loc2 (CAPS, larger)
+  # label points by loc2 (Title Case)
   geom_text(
     aes(label = tools::toTitleCase(as.character(loc2))),
     vjust = -0.8,
@@ -4310,11 +4370,11 @@ gg_acc_arag_loc2_lm <- ggplot(
     method = "lm",
     se = TRUE,
     linewidth = 1,
-    color = "black",
+    color = "blue",
     inherit.aes = FALSE
   ) +
 
-  # LM labels (equation, R², p) only for significant basins
+  # LM labels (equation, R², p)
   geom_text(
     data = lm_labels %>% dplyr::filter(is_sig, lm_ok),
     aes(x = x, y = y, label = label),
@@ -4324,37 +4384,41 @@ gg_acc_arag_loc2_lm <- ggplot(
     size = 4
   ) +
 
+  # existing color scale
   color_scale +
+
+  # NEW: force ATL = square, PAC = circle
+  scale_shape_manual(values = c("atlantic" = 15,   # square
+                                "pacific"  = 16)) + # circle
+
   scale_linetype_discrete(name = "Basin") +
 
   labs(
     x = expression(Omega[arag] ~ "(mean ± SE)"),
     y = "Accretion (mean ± SE)",
     color = "loc1.2"
-    # title removed
   ) +
   theme_classic(base_size = 18) +
   theme(
-    # remove gridlines just in case
     panel.grid = element_blank(),
-
-    # bigger axis titles and tick labels
     axis.title = element_text(size = 22),
     axis.text  = element_text(size = 18),
-
-    # black box around plotting region
     panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
-
-    # let the box be the frame (no extra axis lines)
     axis.line = element_blank(),
-
     legend.position = "none",
-
-    # enforce square panel shape
     aspect.ratio = 1
   )
 
 print(gg_acc_arag_loc2_lm)
+
+ggsave(
+  filename = "accretion_vs_arag_loc2_lm.pdf",
+  plot = gg_acc_arag_loc2_lm,
+  device = cairo_pdf,   # high-quality text rendering
+  width = 7,
+  height = 7,
+  units = "in"
+)
 ```
 
 
@@ -5192,6 +5256,124 @@ plot_gravity_log <- gravity_long_log %>%
 
 print(plot_gravity_log)
 ```
+
+
+
+
+
+
+
+
+
+### stats analysis
+```{r additionalstats, fig.width=12, fig.height=18, out.width="100%", echo=FALSE}
+## =========================
+## 0) Packages
+## =========================
+library(dplyr)
+library(readr)
+library(ggplot2)
+library(rlang)  # for .data if needed later
+
+## =========================
+## 1) Read data
+## =========================
+bottle  <- bottleData_loc3
+
+## =========================
+## 2) Ensure consistent basin and loc2 naming
+##    (adjust if your columns differ)
+## =========================
+if ("basin.x" %in% names(barData)) barData <- barData %>% rename(basin = basin.x)
+if ("basin.y" %in% names(barData)) barData <- barData %>% rename(basin = basin.y)
+if ("Basin"   %in% names(barData)) barData <- barData %>% rename(basin = Basin)
+
+if ("basin.x" %in% names(bottle)) bottle <- bottle %>% rename(basin = basin.x)
+if ("basin.y" %in% names(bottle)) bottle <- bottle %>% rename(basin = basin.y)
+if ("Basin"   %in% names(bottle)) bottle <- bottle %>% rename(basin = Basin)
+
+## =========================
+## 3) Choose omega variable
+## =========================
+omega_var <- "AragSatState"   # change if needed
+
+## =========================
+## 4) Summarize Ωarag at the loc2 level
+## =========================
+omega_loc2 <- bottle %>%
+  group_by(loc2) %>%                     # assumes bottle has loc2
+  summarise(
+    omega_loc2 = mean(.data[[omega_var]], na.rm = TRUE),
+    n_bottle   = sum(!is.na(.data[[omega_var]])),
+    .groups = "drop"
+  )
+
+## =========================
+## 5) Summarize accretion at the loc2 level
+## =========================
+accretion_loc2 <- barData %>%
+  filter(!is.na(accretion_mm3cm2y)) %>%
+  group_by(loc2, basin) %>%
+  summarise(
+    acc_mean      = mean(accretion_mm3cm2y, na.rm = TRUE),
+    acc_sd        = sd(accretion_mm3cm2y, na.rm = TRUE),
+    w_accretion   = n(),   # weight = total number of accretion measurements
+    .groups = "drop"
+  )
+
+## =========================
+## 6) Merge into a single loc2 dataset
+## =========================
+df2 <- accretion_loc2 %>%
+  left_join(omega_loc2, by="loc2") %>%
+  filter(!is.na(omega_loc2))
+
+## =========================
+## 7) Weighted regression at loc2 level
+## =========================
+m_loc2 <- lm(
+  acc_mean ~ omega_loc2 * basin,
+  data = df2,
+  weights = w_accretion        # weight by total accretion effort in each loc2
+)
+
+summary(m_loc2)
+
+## =========================
+## 8) Plot
+## =========================
+ggplot(df2, aes(
+  x = omega_loc2,
+  y = acc_mean,
+  color = basin,
+  shape = basin,
+  size = w_accretion
+)) +
+  geom_point(alpha = 0.8) +
+  geom_smooth(
+    method = "lm",
+    aes(weight = w_accretion, group = basin, color = basin),
+    se = FALSE
+  ) +
+  scale_shape_manual(values = c(atlantic = 15, pacific = 16)) +
+  theme_bw(base_size = 16) +
+  labs(
+    x = expression(Omega[arag] ~ " (loc2 mean)"),
+    y = "Accretion mean (mm³ cm⁻² yr⁻¹)",
+    size = "Accretion\nn per loc2",
+    title = "Weighted accretion–Ωarag regression at the loc2 level"
+  )
+```
+
+
+
+
+
+
+
+
+
+
 
 # Abstract
 
