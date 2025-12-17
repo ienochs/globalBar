@@ -97,7 +97,9 @@ loc_colors <- c(
     "samoa.tau"     = "#7A7A7A",
     "samoa.tutuila" = "#C8C8C8"
 )
+```
 
+```{r plotWrappers, echo=FALSE}
 # Create box plot theme
 myBoxplotStyle <- function(pal = loc_colors,
                     facet = vars(basin),
@@ -125,9 +127,7 @@ myBoxplotStyle <- function(pal = loc_colors,
     if (!is.null(ylim)) list(coord_cartesian(ylim = ylim)) else list()
   )
 }
-```
 
-```{r scatterPlotWrappers, echo=FALSE}
 # Build labels for linear regression plots
 .lm_label <- function(df, x, y) {
   sm <- summary(lm(as.formula(paste(y, "~", x)), data = df))
@@ -397,49 +397,48 @@ plot_loc3_lm_full_atl_pac <- function(
 }
 ```
 
-```{r dataImportFunctionsAndPath, echo=FALSE}
-# Attempt Ian's working directory first
-rootFolder <- file.path("C:/Users/ian.enochs/Documents/GitHub/globalBar/analysis")
-
-# If Ian's path does not exist, use John's path instead
-if (!dir.exists(rootFolder)) {
+```{r dataImportPaths, echo=FALSE}
+#Set root folder and working directories
+rootFolder <- file.path("C:/Users/ian.enochs/Documents/GitHub/globalBar/analysis")  # Attempt Ian's working directory first
+if (!dir.exists(rootFolder)) {                                                      # If Ian's path does not exist, use John's path instead
   rootFolder <- file.path("/Users/john.morris/Documents/GitHub/globalBar/analysis")
 }
-
 setwd(rootFolder)
-# Constants & Paths
-rootFolder <- getwd()
-##data_dir   <- file.path(rootFolder, "Github", "globalBar", "analysis", "data") #Original code
+
+#Bar directory and paths
 data_dir   <- file.path(rootFolder, "data")
 atl_path   <- file.path(data_dir, "NCRMP_Atlantic_allBmuData.xlsx")
 pac_path   <- file.path(data_dir, "NCRMP_Pacific_allBmuData.xlsx")
 dec2025Update_path   <- file.path(data_dir, "Pac_Atl_NCRMP_2024_updateDec2025.xlsx") #dec2025 update path
 
-##p_dir <- file.path(rootFolder, "Github", "globalBar", "analysis", "data", "parrotfish") #Original code
+#Parrotfish directory and paths
 p_dir <- file.path(rootFolder, "data", "parrotfish")
 atl_comm_path <- file.path(p_dir, "parrotfish_BMUs_Atlantic.csv")
 pac_comm_path <- file.path(p_dir, "parrotfish_BMUs_Pacific.csv")
 atl_fxn_path  <- file.path(p_dir, "parrotfishFXN_BMUs_Atlantic.csv")
 pac_fxn_path  <- file.path(p_dir, "parrotfishFXN_BMUs_Pacific.csv")
 
-##e_dir <- file.path(rootFolder, "Github", "globalBar", "analysis", "data", "environmental") #Original code
+#Environmental directory and path
 e_dir <- file.path(rootFolder, "data", "environmental")
 env_path <- file.path(e_dir, "eds_time.csv")
+```
 
-# Helper: remove rows that are entirely NA (after making "" -> NA)
+```{r dataImportFunctions, echo=FALSE}
+#Function to remove rows if all cells are NA
 drop_all_na_rows <- function(df) {
   df %>%
     dplyr::mutate(dplyr::across(dplyr::where(is.character), ~ dplyr::na_if(trimws(.), ""))) %>%
     dplyr::filter(!dplyr::if_all(dplyr::everything(), ~ is.na(.)))
 }
 
-# Lookup helpers
+#Function to assign basins based on regions
 to_basin <- function(region) dplyr::case_when(
   region %in% c("DRTO","FGB","FLK","PR","STJ","STT","STX") ~ "atlantic",
   region %in% c("MARIAN","MHI","NWHI","PRIA","SAMOA")      ~ "pacific",
   TRUE ~ NA_character_
 )
 
+#Function to assign loc1 based on region
 to_loc1 <- function(region) dplyr::case_when(
   region %in% c("DRTO","FLK")           ~ "florida",
   region == "FGB"                       ~ "flowerGardenBanks",
@@ -452,6 +451,7 @@ to_loc1 <- function(region) dplyr::case_when(
   TRUE ~ NA_character_
 )
 
+#Function to assign loc2 based on region and subregion
 to_loc2 <- function(region, subRegion) dplyr::case_when(
   region == "DRTO" ~ "dryTortugas",
   region == "FGB"  ~ "flowerGardenBanks",
@@ -477,20 +477,20 @@ to_loc2 <- function(region, subRegion) dplyr::case_when(
   TRUE ~ NA_character_
 )
 
-#loc3 logic
-to_loc3 <- function(region, loc2, subRegion, siteName, basin, dataset_type, lat = NA_real_) {
-  dtype <- tolower(dataset_type)   # "bar", "parrot", or "env"
-  bsn   <- tolower(basin)
-  sn    <- ifelse(is.na(siteName), "", siteName)
-  site_norm <- gsub("_", "-", sn, fixed = TRUE)
+#FUNCTIONS TO ASSIGN LOC3
+#Shared helpers
+safe_concat <- function(l2, subR) {
+  s <- ifelse(is.na(subR) | trimws(subR) == "", NA, subR)
+  ifelse(is.na(s), l2, paste(l2, s, sep = "-"))
+}
+first3_letters_lower <- function(x) {
+  tolower(substr(gsub("\\s+", "", x), 1, 3))
+}
+normalize_site <- function(siteName) {
+  ifelse(is.na(siteName), "", gsub("_", "-", siteName, fixed = TRUE))
+}
 
-  # helpers
-  safe_concat <- function(l2, subR) {
-    s <- ifelse(is.na(subR) | trimws(subR) == "", NA, subR)
-    ifelse(is.na(s), l2, paste(l2, s, sep = "-"))
-  }
-  first3_letters_lower <- function(x) tolower(substr(gsub("\\s+", "", x), 1, 3))
-
+#Pacific site name map
   pac_dir_map <- c(
     # Tutuila
     "OCC-TUT-002"="north","OCC-TUT-007"="east","OCC-TUT-017"="south","OCC-TUT-022"="west",
@@ -522,7 +522,74 @@ to_loc3 <- function(region, loc2, subRegion, siteName, basin, dataset_type, lat 
     "OCC-MAU-002"="north","OCC-MAU-005"="east","OCC-MAU-019"="south","OCC-MAU-008"="west","OCC-MAU-016"="innerHCO2","OCC-MAU-018"="innerMCO2"
   )
 
-  # ENV-only helpers (lat -> loc3)
+to_loc3_bar <- function(region, loc2, subRegion, siteName, basin) {
+  bsn       <- tolower(basin)
+  site_norm <- normalize_site(siteName)
+  dplyr::case_when(
+    # Puerto Rico
+    loc2 == "puertoRico" & siteName == "Fajardo" ~ "puertoRico-northeast",
+    bsn == "atlantic" & loc2 == "puertoRico" & siteName %in% c("laParguera","La Parguera") ~
+      "puertoRico-southwest",
+
+    # Florida Keys (BAR logic)
+    bsn == "atlantic" & loc2 == "keys" ~ paste(
+      loc2,
+      ifelse(first3_letters_lower(site_norm) == "che", "uki",
+             first3_letters_lower(site_norm)),
+      sep = "-"
+    ),
+
+    # Pacific mapped sites
+    bsn == "pacific" & site_norm %in% names(pac_dir_map) ~
+      paste(loc2, pac_dir_map[site_norm], sep = "-"),
+
+    bsn == "pacific" ~ loc2,
+
+    # Atlantic general
+    bsn == "atlantic" & loc2 %in% c(
+      "dryTortugas","flowerGardenBanks","puertoRico",
+      "saintJohn","saintThomas","saintCroix"
+    ) ~ safe_concat(loc2, subRegion),
+
+    TRUE ~ NA_character_
+  )
+}  
+
+to_loc3_parrot <- function(region, loc2, subRegion, siteName, basin) {
+  bsn       <- tolower(basin)
+  site_norm <- normalize_site(siteName)
+
+  dplyr::case_when(
+    # Puerto Rico overrides
+    loc2 == "puertoRico" & siteName == "fajardo" & subRegion == "east"  ~ "puertoRico-northeast",
+    loc2 == "puertoRico" & siteName == "fajardo" & subRegion == "north" ~ "puertoRico-north",
+    loc2 == "puertoRico" & siteName == "culebra" & subRegion == "east"  ~ "puertoRico-east",
+
+    # Florida Keys (PARROT logic)
+    bsn == "atlantic" & loc2 == "keys" & subRegion == "lower"  & site_norm == "inshore"  ~ "keys-lki",
+    bsn == "atlantic" & loc2 == "keys" & subRegion == "lower"  & site_norm == "offshore" ~ "keys-lko",
+    bsn == "atlantic" & loc2 == "keys" & subRegion == "middle" & site_norm == "inshore"  ~ "keys-mki",
+    bsn == "atlantic" & loc2 == "keys" & subRegion == "middle" & site_norm == "offshore" ~ "keys-mko",
+    bsn == "atlantic" & loc2 == "keys" & subRegion == "upper"  & site_norm == "inshore"  ~ "keys-uki",
+    bsn == "atlantic" & loc2 == "keys" & subRegion == "upper"  & site_norm == "offshore" ~ "keys-uko",
+
+    # Pacific mapped sites
+    bsn == "pacific" & site_norm %in% names(pac_dir_map) ~
+      paste(loc2, pac_dir_map[site_norm], sep = "-"),
+
+    bsn == "pacific" ~ loc2,
+
+    # Atlantic general
+    bsn == "atlantic" & loc2 %in% c(
+      "dryTortugas","flowerGardenBanks","puertoRico",
+      "saintJohn","saintThomas","saintCroix"
+    ) ~ safe_concat(loc2, subRegion),
+
+    TRUE ~ NA_character_
+  )
+}  
+
+to_loc3_env <- function(lat) {
   env_lat_map <- c(
     # puerto rico
     "18.48227"="north","18.33066"="east","18.33696"="northeast","17.91047"="south","17.95355"="southwest","18.34435"="west",
@@ -567,74 +634,14 @@ to_loc3 <- function(region, loc2, subRegion, siteName, basin, dataset_type, lat 
     # tutuila
     "-14.24479"="north","-14.28521"="east","-14.36351"="south","-14.29464"="west"
   )
-  env_loc3_from_lat <- function(lat) {
-    key <- as.character(round(lat, 5))
-    out <- unname(env_lat_map[key])
-    ifelse(is.na(out), NA_character_, out)
-  }
+  key <- as.character(round(lat, 5))
+  out <- unname(env_lat_map[key])
+  ifelse(is.na(out), NA_character_, out)
+}  
+```  
 
-  # ENV branch
-  if (dtype == "env") {
-    return(env_loc3_from_lat(lat))
-  }
-
-  # BAR/PARROT branches
-  targets_atl_concat <- c("dryTortugas","flowerGardenBanks","puertoRico","saintJohn","saintThomas","saintCroix")
-
-  dplyr::case_when(
-    # --- SPECIFIC OVERRIDES MUST COME FIRST ---
-
-    # Puerto Rico corrections (normalized site names)
-    dtype == "parrot" &  loc2 == "puertoRico" & siteName == "fajardo" & subRegion == "east"    ~ "puertoRico-northeast",
-    dtype == "parrot" & loc2 == "puertoRico" & siteName == "fajardo" & subRegion == "north"    ~ "puertoRico-north",
-    dtype == "parrot" & loc2 == "puertoRico" & siteName == "culebra" & subRegion == "east"    ~ "puertoRico-east",
-    dtype == "bar" & loc2 == "puertoRico" & siteName == "Fajardo"    ~ "puertoRico-northeast",
-    
-        
-    bsn == "atlantic" & loc2 == "puertoRico" & siteName == "laParguera" ~ "puertoRico-southwest",
-    bsn == "atlantic" & loc2 == "puertoRico" & siteName == "La Parguera" ~ "puertoRico-southwest",
-
-    bsn == "atlantic" & loc2 == "puertoRico" & siteName == "laParguera" ~ "puertoRico-southwest",
-
-    # PACIFIC specific map (by siteName code) and fallback
-    bsn == "pacific" & site_norm %in% names(pac_dir_map) ~ paste(loc2, pac_dir_map[site_norm], sep = "-"),
-    bsn == "pacific"                                     ~ loc2,
-
-    # ATLANTIC general concat AFTER specific overrides
-    bsn == "atlantic" & loc2 %in% targets_atl_concat     ~ safe_concat(loc2, subRegion),
-
-    # KEYS special cases
-    bsn == "atlantic" & loc2 == "keys" & dtype == "bar"  ~ paste(
-      loc2,
-      ifelse(first3_letters_lower(site_norm) == "che", "uki", first3_letters_lower(site_norm)),
-      sep = "-"
-    ),
-    bsn == "atlantic" & loc2 == "keys" & dtype == "parrot" & subRegion == "lower"  & site_norm == "inshore"  ~ "keys-lki",
-    bsn == "atlantic" & loc2 == "keys" & dtype == "parrot" & subRegion == "lower"  & site_norm == "offshore" ~ "keys-lko",
-    bsn == "atlantic" & loc2 == "keys" & dtype == "parrot" & subRegion == "middle" & site_norm == "inshore"  ~ "keys-mki",
-    bsn == "atlantic" & loc2 == "keys" & dtype == "parrot" & subRegion == "middle" & site_norm == "offshore" ~ "keys-mko",
-    bsn == "atlantic" & loc2 == "keys" & dtype == "parrot" & subRegion == "upper"  & site_norm == "inshore"  ~ "keys-uki",
-    bsn == "atlantic" & loc2 == "keys" & dtype == "parrot" & subRegion == "upper"  & site_norm == "offshore" ~ "keys-uko",
-
-    TRUE ~ NA_character_
-  )
-}
-```
-
-```{r loadData, echo=FALSE}
-# Read & Bind BAR data
-# Column specs (Parrot CSVs)
-ct <- cols(
-  .default       = col_guess(),
-  yearFishSurvey = col_integer(),
-  siteFishSurvey = col_character()
-)
-# ---- readers ----
-# For CSVs
-read_bind_csv <- function(paths, col_types) {
-  purrr::map_dfr(paths, ~ readr::read_csv(.x, col_types = col_types, show_col_types = FALSE))
-}
-
+```{r readBindRawData, echo=FALSE}
+#FUNCTION FOR READING DATA TYPES
 # For Excel (.xlsx)
 read_bind_excel <- function(paths, sheet = NULL) {
   purrr::map_dfr(
@@ -642,25 +649,39 @@ read_bind_excel <- function(paths, sheet = NULL) {
     ~ readxl::read_excel(.x, sheet = sheet)
   )
 }
+# For CSVs
+read_bind_csv <- function(paths, col_types) {
+  purrr::map_dfr(paths, ~ readr::read_csv(.x, col_types = col_types, show_col_types = FALSE))
+}
+ct <- cols(
+  .default       = col_guess(),
+  yearFishSurvey = col_integer(),
+  siteFishSurvey = col_character()
+)
+
+#READ AND BIND DATA
 # Read & Bind Bar Data
 barData_raw <-
   read_bind_excel(c(atl_path, pac_path, dec2025Update_path)) %>%
   drop_all_na_rows()
 
 # Read & Bind Parrot Community Data
-parrotCommunityData <- read_bind_csv(c(atl_comm_path, pac_comm_path), ct) %>%
-  drop_all_na_rows()
-# Read & Bind Parrot FXN Data
-parrotFXNData <- read_bind_csv(c(atl_fxn_path, pac_fxn_path), ct) %>%
+parrotCommunityData_raw <- read_bind_csv(c(atl_comm_path, pac_comm_path), ct) %>%
   drop_all_na_rows()
 
+# Read & bind parrot FXN data
+parrotFXNData_raw <- read_bind_csv(c(atl_fxn_path, pac_fxn_path), ct) %>%
+  drop_all_na_rows()
+
+# Read & bind environmental data
 environmentalData_raw <- read_bind_csv(c(env_path), cols(.default = col_guess())) %>%
   drop_all_na_rows()
 ```
 
-```{r QAQC, echo=FALSE}
-#Fix typos in raw data
-barData_raw <- barData_raw %>%
+```{r fixRawDataConsistencies, echo=FALSE}
+#barData QAQC
+#Fix typos in barData site names
+barData <- barData_raw %>%
   mutate(
     siteName = case_when(
       siteName == "OCC-HAW-10" ~ "OCC-HAW-010",
@@ -669,72 +690,34 @@ barData_raw <- barData_raw %>%
       TRUE ~ siteName
           )
   )
-#Fix depths in the Pacific
-depth_csv_path <- file.path(data_dir, "barData_pac_depths.csv")
-# --- read + prep depth table ---
-pac_depths <- readr::read_csv(depth_csv_path, show_col_types = FALSE) %>%
-  dplyr::mutate(siteName = trimws(siteName))
+#Species naming consistencies 
+barData <- barData %>%
+  mutate(
+    species = case_when(
+      species %in% c("O. faveolata", "Orbicella faveolata", "Orbicella sp.", "O.faveolata") ~ "ofav",
+      species %in% c("P. lobata", "Porites lobata") ~ "plob",
+      species %in% c("Isopora sp.") ~ "iso",
+      TRUE ~ species
+    )
+  )
+other_species <- barData %>%
+  distinct(species) %>%
+  arrange(species)
+#List of all species
+other_species
 
-# If your CSV depth column is not literally named "depth", set it here:
-# (leave as-is if your CSV column name is already depth)
-depth_col_in_csv <- "depth"
+#Parrot Data QAQC
+parrotCommunityData <- parrotCommunityData_raw
+parrotFXNData <- parrotFXNData_raw
 
-stopifnot("siteName" %in% names(pac_depths))
-stopifnot(depth_col_in_csv %in% names(pac_depths))
-
-pac_depths2 <- pac_depths %>%
-  dplyr::select(siteName, depth_new = all_of(depth_col_in_csv)) %>%
-  dplyr::filter(!is.na(siteName), siteName != "") %>%
-  # if duplicates exist, keep the first non-NA depth
-  dplyr::group_by(siteName) %>%
-  dplyr::summarise(depth_new = dplyr::first(na.omit(depth_new)), .groups = "drop")
-
-# --- normalize siteName in barData_raw ---
-barData_raw <- barData_raw %>%
-  dplyr::mutate(siteName = trimws(siteName))
-
-stopifnot("siteName" %in% names(barData_raw))
-stopifnot("basin" %in% names(barData_raw))
-stopifnot("depth" %in% names(barData_raw))  # change if your depth field has a different name
-
-# --- unmatched lists (both directions) ---
-pac_sites_in_bar <- barData_raw %>%
-  dplyr::filter(tolower(basin) == "pacific") %>%
-  dplyr::distinct(siteName) %>%
-  dplyr::filter(!is.na(siteName), siteName != "")
-
-sites_in_csv <- pac_depths2 %>%
-  dplyr::distinct(siteName) %>%
-  dplyr::filter(!is.na(siteName), siteName != "")
-
-siteNames_missing_in_csv <- setdiff(pac_sites_in_bar$siteName, sites_in_csv$siteName)
-siteNames_missing_in_bar <- setdiff(sites_in_csv$siteName, pac_sites_in_bar$siteName)
-
-unmatched_siteNames <- list(
-  in_barData_raw_pacific_but_not_in_csv = sort(siteNames_missing_in_csv),
-  in_csv_but_not_in_barData_raw_pacific = sort(siteNames_missing_in_bar)
-)
-
-# --- update depth ONLY for pacific rows ---
-barData_raw_updated <- barData_raw %>%
-  dplyr::left_join(pac_depths2, by = "siteName") %>%
-  dplyr::mutate(
-    depth = dplyr::if_else(tolower(basin) == "pacific" & !is.na(depth_new), depth_new, depth)
-  ) %>%
-  dplyr::select(-depth_new)
-
-# --- results ---
-# 1) updated data frame:
-barData_raw <- barData_raw_updated
-
-# 2) list of siteNames with no match either direction:
-unmatched_siteNames
+#Environmental Data QAQC
+environmentalData <- environmentalData_raw
 ```
 
+
 ```{r creatLocFields, echo=FALSE}
-# Create loc fields
-# ===== BAR =====
-barData <- barData_raw %>%
+# Create BAR loc fields
+barData <- barData %>%
   select(-c(dimensions, carbMDPre, carbEQPre, carbMDPost)) %>%
   mutate(
     daysDeployed  = as.numeric(ymd(dateRecovery) - ymd(dateDeployment)),
@@ -744,39 +727,235 @@ barData <- barData_raw %>%
     basin = to_basin(region),
     loc1  = to_loc1(region),
     loc2  = to_loc2(region, subRegion),
-    loc3  = to_loc3(region, loc2, subRegion, siteName, basin, dataset_type = "bar"),
+    loc3  = to_loc3_bar(region, loc2, subRegion, siteName, basin),
     loc1.2 = paste(loc1, loc2, sep = ".")
   )
 
-# ===== Parrot community =====
+# Create parrot community loc fields
 parrotCommunityData <- parrotCommunityData %>%
   mutate(
     basin = to_basin(region),
     loc1  = to_loc1(region),
     loc2  = to_loc2(region, subRegion),
-    loc3  = to_loc3(region, loc2, subRegion, siteName, basin, dataset_type = "parrot"),
+    loc3  = to_loc3_parrot(region, loc2, subRegion, siteName, basin),
     loc1.2 = paste(loc1, loc2, sep = ".")
   )
 
-# ===== Parrot functional groups =====
+# Create parrot functional group loc fields
 parrotFXNData <- parrotFXNData %>%
   mutate(
     basin = to_basin(region),
     loc1  = to_loc1(region),
     loc2  = to_loc2(region, subRegion),
-    loc3  = to_loc3(region, loc2, subRegion, siteName, basin, dataset_type = "parrot"),
+    loc3  = to_loc3_parrot(region, loc2, subRegion, siteName, basin),
     loc1.2 = paste(loc1, loc2, sep = ".")
   )  
 
-# ===== Environmental data =====
-environmentalData <- environmentalData_raw %>%
+# Create environmental data loc fields
+environmentalData <- environmentalData %>%
   mutate(
-    loc3   = paste(loc2, (to_loc3(loc1, loc2, subRegion,
-                     siteName = NA_character_, basin = basin,
-                     dataset_type = "env", lat = lat)), sep = "-"),
+    loc3   = to_loc3_env(lat),
     loc1.2 = paste(loc1, loc2, sep = ".")
   )
 ```
+
+```{r fixDepths, echo=FALSE}
+#Fix depths based on csv tables
+#Pacific depths (match by siteName)
+pac_depths <- read_csv(file.path(data_dir, "barData_pac_depths.csv"), show_col_types = FALSE) %>%
+  transmute(
+    siteName = str_trim(siteName),
+    depth_new = depth    # <-- change if your CSV column isn't literally named "depth"
+  )
+barData <- barData %>%
+  mutate(
+    siteName = str_trim(siteName),
+    basin_l  = tolower(basin)
+  ) %>%
+  left_join(pac_depths, by = "siteName") %>%
+  mutate(
+    depth = if_else(basin_l == "pacific" & !is.na(depth_new), depth_new, depth)
+  ) %>%
+  select(-depth_new, -basin_l)
+
+# Atlantic depths (match by loc3)
+atl_depths <- read_csv(file.path(data_dir, "barData_atl_depths.csv"), show_col_types = FALSE) %>%
+  transmute(
+    loc3 = str_trim(loc3),
+    depth_new = depth    # <-- change if your CSV column isn't literally named "depth"
+  )
+barData <- barData %>%
+  mutate(
+    loc3    = str_trim(loc3),
+    basin_l = tolower(basin)
+  ) %>%
+  left_join(atl_depths, by = "loc3") %>%
+  mutate(
+    depth = if_else(basin_l == "atlantic" & !is.na(depth_new), depth_new, depth)
+  ) %>%
+  select(-depth_new, -basin_l)
+
+#Check completeness by creating list of unmatched Pacific siteName
+pac_sites_in_bar <- barData %>%
+  filter(tolower(basin) == "pacific") %>%
+  distinct(siteName) %>%
+  filter(!is.na(siteName), siteName != "")
+pac_sites_in_csv <- pac_depths %>%
+  distinct(siteName) %>%
+  filter(!is.na(siteName), siteName != "")
+unmatchedDepth_pacific <- list(
+  in_barData_pacific_but_not_in_csv = sort(setdiff(pac_sites_in_bar$siteName, pac_sites_in_csv$siteName)),
+  in_csv_but_not_in_barData_pacific = sort(setdiff(pac_sites_in_csv$siteName, pac_sites_in_bar$siteName))
+)
+unmatchedDepth_pacific
+#Check completeness by creating list of unmatched Atlantic loc3
+atl_loc3_in_bar <- barData %>%
+  filter(tolower(basin) == "atlantic") %>%
+  distinct(loc3) %>%
+  filter(!is.na(loc3), loc3 != "")
+
+atl_loc3_in_csv <- atl_depths %>%
+  distinct(loc3) %>%
+  filter(!is.na(loc3), loc3 != "")
+unmatchedDepth_atlantic <- list(
+  in_barData_atlantic_but_not_in_csv = sort(setdiff(atl_loc3_in_bar$loc3, atl_loc3_in_csv$loc3)),
+  in_csv_but_not_in_barData_atlantic = sort(setdiff(atl_loc3_in_csv$loc3, atl_loc3_in_bar$loc3))
+)
+unmatchedDepth_atlantic
+```
+
+```{r mass_vs_volume_fill_and_plot, fig.width=10, fig.height=3.8, echo=FALSE, message=FALSE, warning=FALSE}
+# 0) Inputs
+target_species_fill <- c("ofav", "plob")   # only these get imputed
+xvar <- "massBlockPre"
+yvar <- "volumeBlockPre"
+
+# 1) Fit species-specific LMs (measured only) for ofav & plob
+lm_models <- barData %>%
+  filter(
+    species %in% target_species_fill,
+    !is.na(.data[[xvar]]),
+    !is.na(.data[[yvar]])
+  ) %>%
+  group_by(species) %>%
+  summarise(
+    model = list(lm(as.formula(paste0(yvar, " ~ ", xvar)), data = cur_data())),
+    .groups = "drop"
+  )
+# 2) Identify rows to fill and predict missing volumeBlockPre
+to_fill <- barData %>%
+  filter(
+    species %in% target_species_fill,
+    !is.na(.data[[xvar]]),
+    is.na(.data[[yvar]])
+  ) %>%
+  left_join(lm_models, by = "species") %>%
+  rowwise() %>%
+  mutate(
+    volumeBlockPre_pred = predict(model, newdata = cur_data())
+  ) %>%
+  ungroup()
+
+# tagNum lists (calculated)
+tagNums_calculated <- to_fill %>%
+  select(species, tagNum) %>%
+  arrange(species, tagNum)
+
+tagNums_ofav <- tagNums_calculated %>% filter(species == "ofav") %>% pull(tagNum)
+tagNums_plob <- tagNums_calculated %>% filter(species == "plob") %>% pull(tagNum)
+
+# 3) Merge predictions back into barData (fill ONLY missing volumeBlockPre)
+#    Also add a provenance flag
+barData <- barData %>%
+  left_join(
+    to_fill %>% select(tagNum, volumeBlockPre_pred),
+    by = "tagNum"
+  ) %>%
+  mutate(
+    volumeBlockPre_source = case_when(
+      is.na(.data[[yvar]]) & !is.na(volumeBlockPre_pred) ~ "predicted_from_mass",
+      !is.na(.data[[yvar]])                              ~ "measured",
+      TRUE                                               ~ NA_character_
+    ),
+    !!yvar := ifelse(
+      is.na(.data[[yvar]]),
+      volumeBlockPre_pred,
+      .data[[yvar]]
+    )
+  ) %>%
+  select(-volumeBlockPre_pred)
+# 4) Build 2-panel plot for species that have BOTH mass & volume (after fill)
+#    LM stats (equation/R2/p) are computed from MEASURED-only complete cases
+# =========================
+plot_df <- barData %>%
+  filter(!is.na(.data[[xvar]]), !is.na(.data[[yvar]]), !is.na(species))
+
+# pick the 2 species that have BOTH fields available (after fill)
+species2 <- plot_df %>%
+  count(species, name = "n_complete") %>%
+  arrange(desc(n_complete), species) %>%
+  slice_head(n = 2) %>%
+  pull(species)
+
+plot_df2 <- plot_df %>% filter(species %in% species2)
+
+# lm stats per species from MEASURED complete cases only (so imputation doesn't bias fit)
+lm_stats <- barData %>%
+  filter(
+    species %in% species2,
+    !is.na(.data[[xvar]]),
+    !is.na(.data[[yvar]])
+  ) %>%
+  group_by(species) %>%
+  do({
+    m  <- lm(as.formula(paste0(yvar, " ~ ", xvar)), data = .)
+    sm <- summary(m)
+    tibble(
+      intercept = coef(m)[1],
+      slope     = coef(m)[2],
+      r2        = sm$r.squared,
+      p         = coef(sm)[2, 4]
+    )
+  }) %>%
+  ungroup() %>%
+  mutate(
+    label = sprintf("y = %.2f + %.2fx\nR² = %.2f\np = %.3g", intercept, slope, r2, p)
+  )
+
+# =========================
+# 5) Plot (different shapes for measured vs predicted)
+# =========================
+ggplot(plot_df2, aes(x = .data[[xvar]], y = .data[[yvar]])) +
+  geom_point(aes(shape = volumeBlockPre_source), size = 2, alpha = 0.85) +
+  geom_smooth(method = "lm", se = FALSE, linewidth = 0.8) +
+  geom_text(
+    data = lm_stats,
+    aes(x = -Inf, y = Inf, label = label),
+    inherit.aes = FALSE,
+    hjust = -0.05, vjust = 1.1,
+    size = 3.6
+  ) +
+  facet_wrap(~ species, nrow = 1, scales = "free") +
+  scale_shape_manual(values = c(measured = 16, predicted_from_mass = 1)) +
+  labs(
+    x = "massBlockPre",
+    y = "volumeBlockPre",
+    shape = "volumeBlockPre"
+  ) +
+  theme_bw(base_size = 12) +
+  theme(
+    panel.grid = element_blank(),
+    strip.text = element_text(size = 12, face = "bold")
+  )
+
+# =========================
+# 6) Print tagNum lists of calculated values (as plain output)
+# =========================
+cat("\nCalculated (imputed) volumeBlockPre tagNum values:\n")
+cat("  ofav:", if (length(tagNums_ofav)) paste(tagNums_ofav, collapse = ", ") else "(none)", "\n")
+cat("  plob:", if (length(tagNums_plob)) paste(tagNums_plob, collapse = ", ") else "(none)", "\n")
+```
+
 
 ```{r calculateBarRates, echo=FALSE}
 # Derived metrics (area/time standardized)
@@ -1023,7 +1202,7 @@ Remove data that is
 ```{r cleanData, echo=FALSE}
 barData <- barData %>%
   filter(fate == "SUCCESSFULLY RECOVERED",
-         species != "Isopora sp.",
+         species != "iso",
          tagNum != 1022,
          loc3 != "maug-innerMCO2",
          loc3 != "maug-innerHCO2",
@@ -1381,10 +1560,6 @@ p_timeline <- ggplot() +
 
 p_timeline
 ```
-
-
-
-
 
 ## BAR data
 ### Summary
