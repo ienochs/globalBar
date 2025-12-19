@@ -564,7 +564,8 @@ to_loc3_parrot <- function(region, loc2, subRegion, siteName, basin) {
     loc2 == "puertoRico" & siteName == "fajardo" & subRegion == "east"  ~ "puertoRico-northeast",
     loc2 == "puertoRico" & siteName == "fajardo" & subRegion == "north" ~ "puertoRico-north",
     loc2 == "puertoRico" & siteName == "culebra" & subRegion == "east"  ~ "puertoRico-east",
-
+    loc2 == "puertoRico" & siteName == "laParguera" & subRegion == "south" ~ "puertoRico-southwest",
+    
     # Florida Keys (PARROT logic)
     bsn == "atlantic" & loc2 == "keys" & subRegion == "lower"  & site_norm == "inshore"  ~ "keys-lki",
     bsn == "atlantic" & loc2 == "keys" & subRegion == "lower"  & site_norm == "offshore" ~ "keys-lko",
@@ -589,7 +590,7 @@ to_loc3_parrot <- function(region, loc2, subRegion, siteName, basin) {
   )
 }  
 
-to_loc3_env <- function(lat) {
+to_loc3_env <- function(loc2, lat) {
   env_lat_map <- c(
     # puerto rico
     "18.48227"="north","18.33066"="east","18.33696"="northeast","17.91047"="south","17.95355"="southwest","18.34435"="west",
@@ -634,10 +635,23 @@ to_loc3_env <- function(lat) {
     # tutuila
     "-14.24479"="north","-14.28521"="east","-14.36351"="south","-14.29464"="west"
   )
-  key <- as.character(round(lat, 5))
-  out <- unname(env_lat_map[key])
-  ifelse(is.na(out), NA_character_, out)
-}  
+  # Make sure map keys are consistently 5-decimal strings
+  nm <- suppressWarnings(as.numeric(names(env_lat_map)))
+  names(env_lat_map) <- sprintf("%.5f", nm)
+
+  # Coerce lat safely + format the same way
+  lat_num <- suppressWarnings(as.numeric(lat))
+  key <- sprintf("%.5f", round(lat_num, 5))
+
+  suffix <- unname(env_lat_map[key])
+
+  # Build loc3 = loc2-suffix (only when suffix exists)
+  out <- ifelse(is.na(suffix) | is.na(loc2) | trimws(loc2) == "",
+                NA_character_,
+                paste0(loc2, "-", suffix))
+
+  out
+}
 ```  
 
 ```{r readBindRawData, echo=FALSE}
@@ -754,7 +768,7 @@ parrotFXNData <- parrotFXNData %>%
 # Create environmental data loc fields
 environmentalData <- environmentalData %>%
   mutate(
-    loc3   = to_loc3_env(lat),
+    loc3   = to_loc3_env(loc2, lat),
     loc1.2 = paste(loc1, loc2, sep = ".")
   )
 ```
@@ -1199,6 +1213,7 @@ Remove data that is
 4. Data from Maug seep
 5. Grazing data that is positive
 6. Deployed for more than 6 years or less than 2 years
+7. Depth is less than 10m
 ```{r cleanData, echo=FALSE}
 barData <- barData %>%
   filter(fate == "SUCCESSFULLY RECOVERED",
@@ -1207,8 +1222,9 @@ barData <- barData %>%
          loc3 != "maug-innerMCO2",
          loc3 != "maug-innerHCO2",
          grazing_mm3cm2y<0,
-         duration<6,
-         duration>2)
+         duration < 6,
+         duration > 2,
+         depth >= 10)
 ```
 
 ### Remove sites with low replication
@@ -4071,38 +4087,38 @@ Accretion_env_grid
 bottle_dir   <- file.path(rootFolder, "data", "bottleData")
 bottleLoc2_path <- file.path(bottle_dir, "bottleData_BMUs_loc2.csv")
 
-bottleData_loc2 <- read_csv(bottleLoc2_path, show_col_types = FALSE)
+bottleData_loc2 <- readr::read_csv(bottleLoc2_path, show_col_types = FALSE)
 
 bottleStatsLoc2 <- bottleData_loc2 %>%
   dplyr::group_by(basin, loc1, loc2) %>%
   dplyr::summarise(
     n_bottle = dplyr::n(),
-    
+
     mean_TempInField_degC = mean(TempInField_degC, na.rm = TRUE),
     se_TempInField_degC   = sd(TempInField_degC,   na.rm = TRUE) / sqrt(n_bottle),
-    
+
     mean_Salinity_PSU = mean(Salinity_PSU, na.rm = TRUE),
     se_Salinity_PSU   = sd(Salinity_PSU,   na.rm = TRUE) / sqrt(n_bottle),
-    
+
     mean_AragSatState = mean(AragSatState, na.rm = TRUE),
     se_AragSatState   = sd(AragSatState,   na.rm = TRUE) / sqrt(n_bottle),
-    
+
     mean_pCO2_uatm = mean(pCO2_uatm, na.rm = TRUE),
     se_pCO2_uatm   = sd(pCO2_uatm,   na.rm = TRUE) / sqrt(n_bottle),
-    
+
     mean_pH_calculated = mean(pH_calculated, na.rm = TRUE),
     se_pH_calculated   = sd(pH_calculated,   na.rm = TRUE) / sqrt(n_bottle),
-    
+
     mean_TA_umolperkg = mean(TA_umolperkg, na.rm = TRUE),
     se_TA_umolperkg   = sd(TA_umolperkg,   na.rm = TRUE) / sqrt(n_bottle),
-    
+
     mean_DIC_umolperkg = mean(DIC_umolperkg, na.rm = TRUE),
     se_DIC_umolperkg   = sd(DIC_umolperkg,   na.rm = TRUE) / sqrt(n_bottle),
-    
+
     .groups = "drop"
   )
 
-# ====== 2) Make sure everything numeric is "clean" ======
+# ====== 2) Clean numerics ======
 clean_numeric <- function(df) {
   df %>%
     dplyr::mutate(
@@ -4116,8 +4132,7 @@ clean_numeric <- function(df) {
 barStatsLoc2    <- clean_numeric(barStatsLoc2)
 bottleStatsLoc2 <- clean_numeric(bottleStatsLoc2)
 
-
-# ======  3) Build joined table with all response + bottle env data ====== 
+# ====== 3) Join BAR loc2 stats with bottle env stats ======
 siteStatsBottleEnv <- barStatsLoc2 %>%
   dplyr::select(
     basin, loc1, loc2, loc1.2,
@@ -4154,14 +4169,15 @@ responses <- c(
   density     = "meanDeltaDensity"
 )
 
-resp_cols   <- unname(responses)   # underlying column names
-resp_labels <- names(responses)    # "accretion", "grazing", ...
+resp_cols   <- unname(responses)
+resp_labels <- names(responses)
 
 arag_long <- siteStatsBottleEnv %>%
   dplyr::select(
     basin, loc1, loc2, loc1.2,
     dplyr::any_of(resp_cols),
-    mean_AragSatState
+    mean_AragSatState, se_AragSatState,
+    seAccretion, seGrazing, seMacroboring, seDeltaMass, seDeltaVolume, seDeltaDensity
   ) %>%
   tidyr::pivot_longer(
     cols      = dplyr::any_of(resp_cols),
@@ -4169,141 +4185,223 @@ arag_long <- siteStatsBottleEnv %>%
     values_to = "response_value"
   ) %>%
   dplyr::mutate(
-    # response_col is the column name (e.g. "meanAccretion")
     metric = dplyr::recode(response_col, !!!setNames(resp_labels, resp_cols)),
-    metric = factor(metric, levels = resp_labels),   # lock facet order
+    metric = factor(metric, levels = resp_labels),
     response_value    = suppressWarnings(as.numeric(response_value)),
     mean_AragSatState = suppressWarnings(as.numeric(mean_AragSatState)),
-    basin             = tolower(as.character(basin))
+    basin             = tolower(as.character(basin)),
+    # attach matching SE column for the current response (for y error bars)
+    response_se = dplyr::case_when(
+      response_col == "meanAccretion"   ~ seAccretion,
+      response_col == "meanGrazing"     ~ seGrazing,
+      response_col == "meanMacroboring" ~ seMacroboring,
+      response_col == "meanDeltaMass"   ~ seDeltaMass,
+      response_col == "meanDeltaVolume" ~ seDeltaVolume,
+      response_col == "meanDeltaDensity"~ seDeltaDensity,
+      TRUE ~ NA_real_
+    )
   )
 
-# ====== 5) Helper functions for per-basin regression plots (same pattern as human-pressure code) ======
-interpret_model <- function(R2, p) {
-  if (is.na(R2) || is.na(p)) return("insufficient data")
-  if (p >= 0.05) return("not significant")
-  if (R2 < 0.10) return("weak but significant")
-  if (R2 < 0.30) return("moderate")
-  "strong"
+# ====== 5) Significant fits + equation labels (All/Atlantic/Pacific) ======
+lm_sig_stats <- function(df, xvar, yvar = "response_value") {
+  x <- suppressWarnings(as.numeric(df[[xvar]]))
+  y <- suppressWarnings(as.numeric(df[[yvar]]))
+  cc <- stats::complete.cases(x, y)
+  x <- x[cc]; y <- y[cc]
+  n <- length(x)
+
+  ok <- (n > 2) &&
+    is.finite(stats::var(x)) && stats::var(x) > 0 &&
+    is.finite(stats::var(y)) && stats::var(y) > 0
+
+  if (!ok) return(list(ok = FALSE, sig = FALSE, n = n, p = NA_real_,
+                       intercept = NA_real_, slope = NA_real_, r2 = NA_real_))
+
+  fit <- stats::lm(y ~ x)
+  s   <- summary(fit)
+
+  list(
+    ok = TRUE,
+    sig = !is.na(s$coefficients[2,4]) && is.finite(s$coefficients[2,4]) && s$coefficients[2,4] < 0.05,
+    n = n,
+    p = unname(s$coefficients[2,4]),
+    intercept = unname(coef(fit)[1]),
+    slope = unname(coef(fit)[2]),
+    r2 = unname(s$r.squared)
+  )
 }
 
-make_basin_fit_data <- function(df, xvar) {
-  df_base <- df %>% dplyr::filter(!is.na(response_value))
-  
-  dplyr::bind_rows(
-    df_base %>% dplyr::mutate(fit_group = "All data"),
-    df_base %>%
-      dplyr::filter(basin == "atlantic") %>%
-      dplyr::mutate(fit_group = "Atlantic"),
-    df_base %>%
-      dplyr::filter(basin == "pacific") %>%
-      dplyr::mutate(fit_group = "Pacific")
-  ) %>%
-    dplyr::filter(!is.na(.data[[xvar]])) %>%
-    dplyr::mutate(
-      fit_group = factor(fit_group,
-                         levels = c("All data", "Atlantic", "Pacific"))
-    )
+make_eq_label <- function(st, group_name) {
+  paste0(
+    group_name, ": ",
+    "y = ", formatC(st$intercept, format="g", digits=3),
+    " + ", formatC(st$slope,     format="g", digits=3), "x",
+    "\nR² = ", sprintf("%.2f", st$r2),
+    ", p = ", formatC(st$p, format="e", digits=2),
+    ", n = ", st$n
+  )
 }
 
-facet_lm_stats_basin <- function(df, xvar) {
-  df_long <- make_basin_fit_data(df, xvar)
-  
-  df_long %>%
-    dplyr::group_by(metric, fit_group) %>%
-    dplyr::reframe({
-      x <- suppressWarnings(as.numeric(.data[[xvar]]))
-      y <- suppressWarnings(as.numeric(response_value))
-      n <- sum(stats::complete.cases(x, y))
-      
-      ok <- (n > 2) &&
-        is.finite(stats::var(x, na.rm = TRUE)) && stats::var(x, na.rm = TRUE) > 0 &&
-        is.finite(stats::var(y, na.rm = TRUE)) && stats::var(y, na.rm = TRUE) > 0
-      
-      if (ok) {
-        fit <- stats::lm(y ~ x)
-        s   <- summary(fit)
-        R2    <- unname(s$r.squared)
-        p     <- unname(s$coefficients[2, 4])
-        slope <- unname(stats::coef(fit)[2])
-      } else {
-        R2 <- NA_real_; p <- NA_real_; slope <- NA_real_
-      }
-      
-      x_min <- suppressWarnings(min(x, na.rm = TRUE))
-      x_max <- suppressWarnings(max(x, na.rm = TRUE))
-      y_min <- suppressWarnings(min(y, na.rm = TRUE))
-      y_max <- suppressWarnings(max(y, na.rm = TRUE))
-      
-      xr <- if (is.finite(x_max - x_min)) x_max - x_min else 0
-      yr <- if (is.finite(y_max - y_min)) y_max - y_min else 0
-      
-      x_pos <- x_min + (if (xr == 0) 0.02 * (if (x_max == 0) 1 else abs(x_max))
-                        else 0.02 * xr)
-      y_pos <- y_max - (if (yr == 0) 0.02 * (if (y_max == 0) 1 else abs(y_max))
-                        else 0.02 * yr)
-      
-      interp <- interpret_model(R2, p)
-      label <- paste0(
-        "R² = ", ifelse(is.na(R2), "NA", sprintf("%.2f", R2)),
-        ", p = ", ifelse(is.na(p), "NA", formatC(p, format = "e", digits = 2)),
-        ", n = ", n,
-        "\nslope = ", ifelse(is.na(slope), "NA",
-                             formatC(slope, format = "g", digits = 3)),
-        "  (", interp, ")"
-      )
-      
-      is_sig <- !is.na(p) && p < 0.05
-      text_col <- if (is_sig) "#1B9E77" else "grey20"
-      
-      tibble(x_pos = x_pos, y_pos = y_pos, label = label, text_col = text_col)
-    })
+label_anchor <- function(df, xvar, yvar = "response_value") {
+  x <- suppressWarnings(as.numeric(df[[xvar]]))
+  y <- suppressWarnings(as.numeric(df[[yvar]]))
+  cc <- stats::complete.cases(x, y)
+  x <- x[cc]; y <- y[cc]
+  if (length(x) < 2 || length(y) < 2) return(list(x0 = NA_real_, y0 = NA_real_, step = NA_real_))
+  x_min <- min(x, na.rm=TRUE); x_max <- max(x, na.rm=TRUE)
+  y_min <- min(y, na.rm=TRUE); y_max <- max(y, na.rm=TRUE)
+  xr <- x_max - x_min; yr <- y_max - y_min
+  if (!is.finite(xr) || xr == 0) xr <- abs(x_max) %||% 1
+  if (!is.finite(yr) || yr == 0) yr <- abs(y_max) %||% 1
+  list(x0 = x_min + 0.05*xr, y0 = y_max - 0.05*yr, step = 0.14*yr)
 }
+`%||%` <- function(a, b) if (is.null(a) || length(a) == 0 || is.na(a)) b else a
 
-plot_response_vs_x_basin <- function(df, xvar, x_label, title_text) {
-  df_long <- make_basin_fit_data(df, xvar)
-  labs_df <- facet_lm_stats_basin(df, xvar)
-  
+plot_one_loc2_response <- function(df_long, metric_name,
+                                  xvar = "mean_AragSatState",
+                                  x_label = expression(Omega[arag])) {
+
+  dfi <- df_long %>% dplyr::filter(metric == metric_name)
+
+  df_all <- dfi
+  df_atl <- dfi %>% dplyr::filter(basin == "atlantic")
+  df_pac <- dfi %>% dplyr::filter(basin == "pacific")
+
+  st_all <- lm_sig_stats(df_all, xvar)
+  st_atl <- lm_sig_stats(df_atl, xvar)
+  st_pac <- lm_sig_stats(df_pac, xvar)
+
+  # point colors (loc1.2 -> loc_colors)
   color_scale <- if (exists("loc_colors", inherits = TRUE)) {
-    scale_color_manual(values = loc_colors)
+    ggplot2::scale_color_manual(values = loc_colors, na.translate = FALSE)
   } else {
-    scale_color_discrete()
+    ggplot2::scale_color_discrete()
   }
-  
-  ggplot(df_long, aes(x = .data[[xvar]], y = response_value)) +
-    geom_point(aes(color = factor(`loc1.2`)), alpha = 0.85) +
-    color_scale +
-    geom_smooth(aes(group = 1), method = "lm", se = TRUE, color = "black") +
-    ggh4x::facet_grid2(
-      rows  = vars(fit_group),
-      cols  = vars(metric),
-      scales = "free_y",
-      independent = "y"
-    ) +
-    geom_text(
-      data = labs_df,
-      aes(x = x_pos, y = y_pos, label = label, color = I(text_col)),
-      inherit.aes = FALSE,
-      hjust = 0, vjust = 1, size = 3
-    ) +
-    labs(title = title_text, x = x_label, y = NULL) +
-    theme_minimal(base_size = 12) +
-    theme(
-      plot.title = element_text(face = "bold"),
-      strip.text = element_text(face = "bold"),
-      panel.grid.minor = element_blank(),
-      legend.position = "none"
+
+  p <- ggplot2::ggplot(
+    dfi,
+    ggplot2::aes(
+      x = .data[[xvar]],
+      y = response_value,
+      color = factor(loc1.2)
     )
+  ) +
+    # points (bigger like your example)
+    ggplot2::geom_point(size = 3) +
+
+    # y error bars (response)
+    ggplot2::geom_errorbar(
+      ggplot2::aes(ymin = response_value - response_se,
+                   ymax = response_value + response_se),
+      width = 0
+    ) +
+
+    # x error bars (Ωarag)
+    ggplot2::geom_errorbarh(
+      ggplot2::aes(xmin = .data[[xvar]] - se_AragSatState,
+                   xmax = .data[[xvar]] + se_AragSatState),
+      height = 0
+    ) +
+
+    color_scale +
+
+    ggplot2::labs(
+      title = paste0(metric_name, " vs Ωarag (loc2)"),
+      x = expression(Omega[arag] ~ "(mean ± SE)"),
+      y = NULL
+    ) +
+
+    # black axes + border (like your theme_classic example)
+    ggplot2::theme_classic(base_size = 18) +
+    ggplot2::theme(
+      panel.grid = ggplot2::element_blank(),
+      axis.title = ggplot2::element_text(size = 22),
+      axis.text  = ggplot2::element_text(size = 18),
+      panel.border = ggplot2::element_rect(color = "black", fill = NA, linewidth = 1),
+      axis.line = ggplot2::element_blank(),
+      legend.position = "none",
+      aspect.ratio = 1,
+      plot.title = ggplot2::element_text(face = "bold")
+    )
+
+  # significant lines only (All/Atlantic/Pacific)
+  if (isTRUE(st_all$sig)) {
+    p <- p + ggplot2::geom_smooth(
+      data = df_all,
+      ggplot2::aes(x = .data[[xvar]], y = response_value),
+      method = "lm", se = TRUE, linewidth = 1, color = "black",
+      inherit.aes = FALSE
+    )
+  }
+  if (isTRUE(st_atl$sig)) {
+    p <- p + ggplot2::geom_smooth(
+      data = df_atl,
+      ggplot2::aes(x = .data[[xvar]], y = response_value),
+      method = "lm", se = TRUE, linewidth = 1, color = "red",
+      inherit.aes = FALSE
+    )
+  }
+  if (isTRUE(st_pac$sig)) {
+    p <- p + ggplot2::geom_smooth(
+      data = df_pac,
+      ggplot2::aes(x = .data[[xvar]], y = response_value),
+      method = "lm", se = TRUE, linewidth = 1, color = "blue",
+      inherit.aes = FALSE
+    )
+  }
+
+  # equation labels only for significant fits
+  label_rows <- list()
+  if (isTRUE(st_all$sig)) label_rows[[length(label_rows) + 1]] <- list("All", st_all, "black")
+  if (isTRUE(st_atl$sig)) label_rows[[length(label_rows) + 1]] <- list("Atlantic", st_atl, "red")
+  if (isTRUE(st_pac$sig)) label_rows[[length(label_rows) + 1]] <- list("Pacific", st_pac, "blue")
+
+  if (length(label_rows) > 0) {
+    anc <- label_anchor(dfi, xvar)
+
+    lab_df <- dplyr::bind_rows(lapply(seq_along(label_rows), function(i) {
+      grp <- label_rows[[i]][[1]]
+      st  <- label_rows[[i]][[2]]
+      col <- label_rows[[i]][[3]]
+      tibble::tibble(
+        x = anc$x0,
+        y = anc$y0 - (i - 1) * anc$step,
+        label = make_eq_label(st, grp),
+        col = col
+      )
+    }))
+
+    p <- p + ggplot2::geom_text(
+      data = lab_df,
+      ggplot2::aes(x = x, y = y, label = label),
+      inherit.aes = FALSE,
+      hjust = 0, vjust = 1,
+      size = 4,
+      color = lab_df$col
+    )
+  }
+
+  p
 }
 
-# ====== 6) Plot responses vs Ωarag (All / Atlantic / Pacific fits) ======
-plot_arag <- arag_long %>%
-  plot_response_vs_x_basin(
-    xvar       = "mean_AragSatState",
-    x_label    = expression(Omega[arag]),
-    title_text = expression(Omega[arag] ~ "vs. Bar Responses (All / Atlantic / Pacific fits)")
+# ====== 6) Make 6 plots and arrange as a 3x2 grid ======
+metrics_to_plot <- levels(arag_long$metric)
+
+plots_loc2 <- lapply(metrics_to_plot, function(m) {
+  plot_one_loc2_response(
+    df_long     = arag_long,
+    metric_name = m,
+    xvar        = "mean_AragSatState",
+    x_label     = expression(Omega[arag])
+  )
+})
+
+grid_loc2 <- patchwork::wrap_plots(plots_loc2, ncol = 3) +
+  patchwork::plot_annotation(
+    title = expression(Omega[arag] ~ "relationships by loc2 (lines only if p < 0.05)")
   )
 
-print(plot_arag)
+print(grid_loc2)
 ```
 
 ### AragSatState by loc3
@@ -4311,7 +4409,6 @@ print(plot_arag)
 
 # ====== 1) Load bottle data ======
 bottleLoc3_path <- file.path(bottle_dir, "bottleData_BMUs_loc3.csv")
-
 bottleData_loc3 <- read_csv(bottleLoc3_path, show_col_types = FALSE)
 
 bottleStatsLoc3 <- bottleData_loc3 %>%
@@ -4374,10 +4471,6 @@ siteStatsBottleEnvLoc3 <- barStatsLoc3 %>%
     by = c("basin", "loc1", "loc2", "loc3")
   )
 
-# This inner_join automatically:
-# - drops loc3 with no bottle data
-# - keeps loc3 with a single bottle (n_bottle = 1) — they'll still appear in plots
-
 # ====== 4) Build long table for response ~ Ωarag analysis (loc3) ======
 responses <- c(
   accretion   = "meanAccretion",
@@ -4388,14 +4481,15 @@ responses <- c(
   density     = "meanDeltaDensity"
 )
 
-resp_cols   <- unname(responses)    # actual column names
-resp_labels <- names(responses)     # "accretion", "grazing", ...
+resp_cols   <- unname(responses)
+resp_labels <- names(responses)
 
 arag_loc3_long <- siteStatsBottleEnvLoc3 %>%
   dplyr::select(
     basin, loc1, loc2, loc3, loc1.2,
     dplyr::any_of(resp_cols),
-    mean_AragSatState
+    mean_AragSatState,
+    se_AragSatState
   ) %>%
   tidyr::pivot_longer(
     cols      = dplyr::any_of(resp_cols),
@@ -4404,196 +4498,191 @@ arag_loc3_long <- siteStatsBottleEnvLoc3 %>%
   ) %>%
   dplyr::mutate(
     metric = dplyr::recode(response_col, !!!setNames(resp_labels, resp_cols)),
-    metric = factor(metric, levels = resp_labels),  # facet order: accretion → grazing → macroboring → mass → volume
+    metric = factor(metric, levels = resp_labels),
     response_value    = suppressWarnings(as.numeric(response_value)),
     mean_AragSatState = suppressWarnings(as.numeric(mean_AragSatState)),
     basin             = tolower(as.character(basin))
   )
 
-# ====== 5) Plot responses vs Ωarag (All / Atlantic / Pacific fits) ======
-plot_arag_loc3 <- arag_loc3_long %>%
-  plot_response_vs_x_basin(
-    xvar       = "mean_AragSatState",
-    x_label    = expression(Omega[arag]),
-    title_text = expression(Omega[arag] ~ "vs. Bar Responses by loc3 (All / Atlantic / Pacific fits)")
-  )
+# ====== 5) Visual output: 6 plots (3x2 grid), All/ATL/PAC LMs (sig only), equations on plot ======
 
-print(plot_arag_loc3)
-```
+lm_sig_stats <- function(df, xvar, yvar = "response_value") {
+  x <- suppressWarnings(as.numeric(df[[xvar]]))
+  y <- suppressWarnings(as.numeric(df[[yvar]]))
+  cc <- stats::complete.cases(x, y)
+  x <- x[cc]; y <- y[cc]
+  n <- length(x)
 
-```{r accretion_vs_arag_loc2_lm_loccolors, fig.width=7, fig.height=7, echo=FALSE}
+  ok <- (n > 2) &&
+    is.finite(stats::var(x)) && stats::var(x) > 0 &&
+    is.finite(stats::var(y)) && stats::var(y) > 0
 
-library(dplyr)
-library(ggplot2)
+  if (!ok) {
+    return(list(ok = FALSE, sig = FALSE, n = n, p = NA_real_,
+                intercept = NA_real_, slope = NA_real_, r2 = NA_real_))
+  }
 
-# 1) Subset to rows with needed data and only Atlantic/Pacific
-acc_arag_loc2 <- siteStatsBottleEnv %>%
-  dplyr::filter(
-    !is.na(meanAccretion),
-    !is.na(mean_AragSatState),
-    basin %in% c("atlantic", "pacific")
-  )
+  fit <- stats::lm(y ~ x)
+  s   <- summary(fit)
 
-# 2) Fit separate LMs for each basin and extract stats
-lm_stats <- acc_arag_loc2 %>%
-  dplyr::group_by(basin) %>%
-  dplyr::summarise(
-    n = sum(complete.cases(mean_AragSatState, meanAccretion)),
-    lm_ok = n > 2 &&
-      stats::var(mean_AragSatState, na.rm = TRUE) > 0 &&
-      stats::var(meanAccretion, na.rm = TRUE) > 0,
-    model = if (lm_ok[1]) list(stats::lm(meanAccretion ~ mean_AragSatState))
-            else list(NULL),
-    .groups = "drop"
-  ) %>%
-  dplyr::rowwise() %>%
-  dplyr::mutate(
-    R2 = if (!is.null(model)) summary(model)$r.squared else NA_real_,
-    p  = if (!is.null(model)) summary(model)$coefficients[2, 4] else NA_real_,
-    a  = if (!is.null(model)) stats::coef(model)[1] else NA_real_,  # intercept
-    b  = if (!is.null(model)) stats::coef(model)[2] else NA_real_,  # slope
-    label = paste0(
-      "y = ", formatC(a, digits = 3, format = "f"),
-      " + ", formatC(b, digits = 3, format = "f"), "x\n",
-      "R² = ", formatC(R2, digits = 2, format = "f"),
-      ", p = ", formatC(p, format = "e", digits = 2)
-    ),
-    is_sig = !is.na(p) && p < 0.05
-  ) %>%
-  dplyr::ungroup()
+  intercept <- unname(stats::coef(fit)[1])
+  slope     <- unname(stats::coef(fit)[2])
+  r2        <- unname(s$r.squared)
+  p         <- unname(s$coefficients[2, 4])
 
-# 3) Choose label positions within each basin's data range
-label_pos <- acc_arag_loc2 %>%
-  dplyr::group_by(basin) %>%
-  dplyr::summarise(
-    x_min = min(mean_AragSatState, na.rm = TRUE),
-    x_max = max(mean_AragSatState, na.rm = TRUE),
-    y_min = min(meanAccretion, na.rm = TRUE),
-    y_max = max(meanAccretion, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  dplyr::mutate(
-    xr = x_max - x_min,
-    yr = y_max - y_min,
-    x  = x_min + 0.05 * xr,
-    y  = y_max - 0.05 * yr
-  ) %>%
-  dplyr::select(basin, x, y)
-
-lm_labels <- dplyr::left_join(lm_stats, label_pos, by = "basin")
-
-# basins where LM is significant
-sig_basins <- lm_stats %>%
-  dplyr::filter(is_sig, lm_ok) %>%
-  dplyr::pull(basin)
-
-# 4) Color scale from loc_colors (tied to loc1.2)
-color_scale <- if (exists("loc_colors", inherits = TRUE)) {
-  scale_color_manual(values = loc_colors, na.translate = FALSE)
-} else {
-  scale_color_discrete()
+  list(ok = TRUE, sig = is.finite(p) && !is.na(p) && p < 0.05, n = n, p = p,
+       intercept = intercept, slope = slope, r2 = r2)
 }
 
-# 5) Final plot: points, x/y error bars, significant basin-specific LMs, labels
-gg_acc_arag_loc2_lm <- ggplot(
-  acc_arag_loc2,
-  aes(
-    x = mean_AragSatState,
-    y = meanAccretion,
-    color = factor(loc1.2),
-    shape = basin               # <---- ADDED
+make_eq_label <- function(st, group_name) {
+  paste0(
+    group_name, ": ",
+    "y = ", formatC(st$intercept, format = "g", digits = 3),
+    " + ", formatC(st$slope,     format = "g", digits = 3), "x",
+    "\nR² = ", sprintf("%.2f", st$r2),
+    ", p = ", formatC(st$p, format = "e", digits = 2),
+    ", n = ", st$n
   )
-) +
-  # points at each loc2
-  geom_point(size = 3) +
+}
 
-  # label points by loc2 (Title Case)
-  geom_text(
-    aes(label = tools::toTitleCase(as.character(loc2))),
-    vjust = -0.8,
-    show.legend = FALSE,
-    size = 5
+label_anchor <- function(df, xvar, yvar = "response_value") {
+  x <- suppressWarnings(as.numeric(df[[xvar]]))
+  y <- suppressWarnings(as.numeric(df[[yvar]]))
+  cc <- stats::complete.cases(x, y)
+  x <- x[cc]; y <- y[cc]
+
+  if (length(x) < 2 || length(y) < 2) {
+    return(list(x0 = NA_real_, y0 = NA_real_, step = NA_real_))
+  }
+
+  x_min <- min(x, na.rm = TRUE); x_max <- max(x, na.rm = TRUE)
+  y_min <- min(y, na.rm = TRUE); y_max <- max(y, na.rm = TRUE)
+
+  xr <- x_max - x_min
+  yr <- y_max - y_min
+  if (!is.finite(xr) || xr == 0) xr <- abs(x_max) %||% 1
+  if (!is.finite(yr) || yr == 0) yr <- abs(y_max) %||% 1
+
+  list(
+    x0   = x_min + 0.03 * xr,
+    y0   = y_max - 0.03 * yr,
+    step = 0.14 * yr
+  )
+}
+
+`%||%` <- function(a, b) if (is.null(a) || length(a) == 0 || is.na(a)) b else a
+
+plot_one_loc3_response <- function(df_long, metric_name,
+                                  xvar = "mean_AragSatState",
+                                  x_label = expression(Omega[arag])) {
+
+  dfi <- df_long %>% dplyr::filter(metric == metric_name)
+
+  df_all <- dfi
+  df_atl <- dfi %>% dplyr::filter(basin == "atlantic")
+  df_pac <- dfi %>% dplyr::filter(basin == "pacific")
+
+  st_all <- lm_sig_stats(df_all, xvar)
+  st_atl <- lm_sig_stats(df_atl, xvar)
+  st_pac <- lm_sig_stats(df_pac, xvar)
+
+  # point colors (loc1.2 -> loc_colors)
+  color_scale <- if (exists("loc_colors", inherits = TRUE)) {
+    ggplot2::scale_color_manual(values = loc_colors, na.translate = FALSE)
+  } else {
+    ggplot2::scale_color_discrete()
+  }
+
+  p <- ggplot2::ggplot(
+    dfi,
+    ggplot2::aes(x = .data[[xvar]], y = response_value, color = factor(loc1.2))
   ) +
+    ggplot2::geom_point(alpha = 0.85, size = 2.6) +
+    color_scale +
+    ggplot2::labs(
+      title = paste0(metric_name, " vs Ωarag (loc3)"),
+      x = x_label,
+      y = NULL
+    ) +
+    ggplot2::theme_classic(base_size = 14) +
+    ggplot2::theme(
+      plot.title = ggplot2::element_text(face = "bold"),
+      legend.position = "none",
+      aspect.ratio = 1
+    )
 
-  # vertical error bars (accretion)
-  geom_errorbar(
-    aes(
-      ymin = meanAccretion - seAccretion,
-      ymax = meanAccretion + seAccretion
-    ),
-    width = 0
-  ) +
+  # significant lines only
+  if (isTRUE(st_all$sig)) {
+    p <- p + ggplot2::geom_smooth(
+      data = df_all,
+      ggplot2::aes(x = .data[[xvar]], y = response_value),
+      method = "lm", se = TRUE, color = "black", inherit.aes = FALSE
+    )
+  }
+  if (isTRUE(st_atl$sig)) {
+    p <- p + ggplot2::geom_smooth(
+      data = df_atl,
+      ggplot2::aes(x = .data[[xvar]], y = response_value),
+      method = "lm", se = TRUE, color = "red", inherit.aes = FALSE
+    )
+  }
+  if (isTRUE(st_pac$sig)) {
+    p <- p + ggplot2::geom_smooth(
+      data = df_pac,
+      ggplot2::aes(x = .data[[xvar]], y = response_value),
+      method = "lm", se = TRUE, color = "blue", inherit.aes = FALSE
+    )
+  }
 
-  # horizontal error bars (Ωarag)
-  geom_errorbarh(
-    aes(
-      xmin = mean_AragSatState - se_AragSatState,
-      xmax = mean_AragSatState + se_AragSatState
-    ),
-    height = 0
-  ) +
+  # labels for significant fits
+  label_rows <- list()
+  if (isTRUE(st_all$sig)) label_rows[[length(label_rows) + 1]] <- list("All",      st_all, "black")
+  if (isTRUE(st_atl$sig)) label_rows[[length(label_rows) + 1]] <- list("Atlantic", st_atl, "red")
+  if (isTRUE(st_pac$sig)) label_rows[[length(label_rows) + 1]] <- list("Pacific",  st_pac, "blue")
 
-  # basin-specific regression lines (only for significant basins)
-  geom_smooth(
-    data = acc_arag_loc2 %>% dplyr::filter(basin %in% sig_basins),
-    aes(
-      x = mean_AragSatState,
-      y = meanAccretion,
-      linetype = basin,
-      group = basin
-    ),
-    method = "lm",
-    se = TRUE,
-    linewidth = 1,
-    color = "blue",
-    inherit.aes = FALSE
-  ) +
+  if (length(label_rows) > 0) {
+    anc <- label_anchor(dfi, xvar)
 
-  # LM labels (equation, R², p)
-  geom_text(
-    data = lm_labels %>% dplyr::filter(is_sig, lm_ok),
-    aes(x = x, y = y, label = label),
-    inherit.aes = FALSE,
-    hjust = 0,
-    vjust = 1,
-    size = 4
-  ) +
+    lab_df <- dplyr::bind_rows(lapply(seq_along(label_rows), function(i) {
+      grp <- label_rows[[i]][[1]]
+      st  <- label_rows[[i]][[2]]
+      col <- label_rows[[i]][[3]]
+      tibble::tibble(
+        x = anc$x0,
+        y = anc$y0 - (i - 1) * anc$step,
+        label = make_eq_label(st, grp),
+        col = col
+      )
+    }))
 
-  # existing color scale
-  color_scale +
+    p <- p + ggplot2::geom_text(
+      data = lab_df,
+      ggplot2::aes(x = x, y = y, label = label),
+      inherit.aes = FALSE,
+      hjust = 0, vjust = 1,
+      size = 3.6,
+      color = lab_df$col
+    )
+  }
 
-  # NEW: force ATL = square, PAC = circle
-  scale_shape_manual(values = c("atlantic" = 15,   # square
-                                "pacific"  = 16)) + # circle
+  p
+}
 
-  scale_linetype_discrete(name = "Basin") +
+# build + print grid (3 columns x 2 rows)
+metrics_to_plot <- levels(arag_loc3_long$metric)
 
-  labs(
-    x = expression(Omega[arag] ~ "(mean ± SE)"),
-    y = "Accretion (mean ± SE)",
-    color = "loc1.2"
-  ) +
-  theme_classic(base_size = 18) +
-  theme(
-    panel.grid = element_blank(),
-    axis.title = element_text(size = 22),
-    axis.text  = element_text(size = 18),
-    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
-    axis.line = element_blank(),
-    legend.position = "none",
-    aspect.ratio = 1
+plots_loc3 <- lapply(metrics_to_plot, function(m) {
+  plot_one_loc3_response(arag_loc3_long, metric_name = m,
+                        xvar = "mean_AragSatState",
+                        x_label = expression(Omega[arag]))
+})
+
+grid_loc3 <- patchwork::wrap_plots(plots_loc3, ncol = 3) +
+  patchwork::plot_annotation(
+    title = expression(Omega[arag] ~ "relationships by loc3 (lines only if p < 0.05)")
   )
 
-print(gg_acc_arag_loc2_lm)
-
-ggsave(
-  filename = "accretion_vs_arag_loc2_lm.pdf",
-  plot = gg_acc_arag_loc2_lm,
-  device = cairo_pdf,   # high-quality text rendering
-  width = 7,
-  height = 7,
-  units = "in"
-)
+print(grid_loc3)
 ```
 
 
@@ -4840,7 +4929,7 @@ kbl(barHumanStats, , digits = 4, caption = "Human pressure statistics by loc3") 
 
 ## Human pressure graphs
 ### Human pressure by loc3
-```{r, fig.width=12, fig.height=18, out.width="100%", echo=FALSE}
+```{r, fig.width=18, fig.height=12, out.width="100%", echo=FALSE}
 # ========= 1) Join & ensure `loc1.2` =========
 pop_cols <- c(
   "population_5km_2005","population_10km_2005",
@@ -4880,210 +4969,278 @@ for (pc in intersect(pop_cols, names(barLoc3_merged))) {
   }
 }
 
-# ========= 2) Response variables & long format =========
+# ========= 2) Response variables & long format (NOW INCLUDES density) =========
 response_map <- c(
   mass        = "meanDeltaMass",
   volume      = "meanDeltaVolume",
+  density     = "meanDeltaDensity",
   macroboring = "meanMacroboring",
   grazing     = "meanGrazing",
   accretion   = "meanAccretion"
 )
 
+resp_cols   <- unname(response_map)
+resp_labels <- names(response_map)  # order for facets
+
 long_dat <- barLoc3_merged %>%
   dplyr::select(
     loc3, `loc1.2`, basin,
-    dplyr::any_of(unname(response_map)),
+    dplyr::any_of(resp_cols),
     dist_port_km, dist_city_km, dist_coast_km, dist_human_access_km,
     dplyr::any_of(pop_cols)
   ) %>%
   tidyr::pivot_longer(
-    cols = dplyr::any_of(unname(response_map)),
+    cols = dplyr::any_of(resp_cols),
     names_to = "response_col",
     values_to = "response_value"
   ) %>%
   dplyr::mutate(
-    metric = dplyr::recode(response_col, !!!setNames(names(response_map), response_map)),
+    metric = dplyr::recode(response_col, !!!setNames(resp_labels, resp_cols)),
+    metric = factor(metric, levels = resp_labels),
     response_value = suppressWarnings(as.numeric(response_value)),
     basin = tolower(as.character(basin))
   )
 
-# ========= 3) Helpers for multi-basin fits =========
-interpret_model <- function(R2, p) {
-  if (is.na(R2) || is.na(p)) return("insufficient data")
-  if (p >= 0.05) return("not significant")
-  if (R2 < 0.10) return("weak but significant")
-  if (R2 < 0.30) return("moderate")
-  "strong"
+# ========= 3) Helpers: significance-gated regression stats per group =========
+lm_group_stats <- function(df, xvar, yvar = "response_value") {
+  x <- suppressWarnings(as.numeric(df[[xvar]]))
+  y <- suppressWarnings(as.numeric(df[[yvar]]))
+  cc <- stats::complete.cases(x, y)
+  x <- x[cc]; y <- y[cc]
+  n <- length(x)
+
+  ok <- (n > 2) &&
+    is.finite(stats::var(x)) && stats::var(x) > 0 &&
+    is.finite(stats::var(y)) && stats::var(y) > 0
+
+  if (!ok) {
+    return(list(ok = FALSE, sig = FALSE, n = n,
+                a = NA_real_, b = NA_real_, r2 = NA_real_, p = NA_real_))
+  }
+
+  fit <- stats::lm(y ~ x)
+  s   <- summary(fit)
+
+  a  <- unname(stats::coef(fit)[1])
+  b  <- unname(stats::coef(fit)[2])
+  r2 <- unname(s$r.squared)
+  p  <- unname(s$coefficients[2, 4])
+
+  list(ok = TRUE, sig = is.finite(p) && !is.na(p) && p < 0.05, n = n,
+       a = a, b = b, r2 = r2, p = p)
 }
 
-# Build long data with three "fit groups":
-#  - All data (no basin filter)
-#  - Atlantic only
-#  - Pacific only
-make_basin_fit_data <- function(df, xvar) {
-  df_base <- df %>% filter(!is.na(response_value))
-
-  bind_rows(
-    df_base %>%
-      mutate(fit_group = "All data"),
-    df_base %>%
-      filter(basin == "atlantic") %>%
-      mutate(fit_group = "Atlantic"),
-    df_base %>%
-      filter(basin == "pacific") %>%
-      mutate(fit_group = "Pacific")
-  ) %>%
-    filter(!is.na(.data[[xvar]]))
+eq_label <- function(st, name) {
+  paste0(
+    name, ": ",
+    "y = ", formatC(st$a, digits = 3, format = "f"),
+    " + ", formatC(st$b, digits = 3, format = "f"), "x\n",
+    "R² = ", formatC(st$r2, digits = 2, format = "f"),
+    ", p = ", formatC(st$p, format = "e", digits = 2),
+    ", n = ", st$n
+  )
 }
 
-facet_lm_stats_basin <- function(df, xvar) {
-  df_long <- make_basin_fit_data(df, xvar)
+# choose a good label anchor within a panel
+label_anchor <- function(df, xvar, yvar = "response_value") {
+  x <- suppressWarnings(as.numeric(df[[xvar]]))
+  y <- suppressWarnings(as.numeric(df[[yvar]]))
+  cc <- stats::complete.cases(x, y)
+  x <- x[cc]; y <- y[cc]
 
-  df_long %>%
-    dplyr::group_by(metric, fit_group) %>%
+  if (length(x) < 2 || length(y) < 2) return(list(x0 = NA_real_, y0 = NA_real_, step = NA_real_))
+
+  x_min <- min(x, na.rm = TRUE); x_max <- max(x, na.rm = TRUE)
+  y_min <- min(y, na.rm = TRUE); y_max <- max(y, na.rm = TRUE)
+  xr <- x_max - x_min; yr <- y_max - y_min
+  if (!is.finite(xr) || xr == 0) xr <- abs(x_max) %||% 1
+  if (!is.finite(yr) || yr == 0) yr <- abs(y_max) %||% 1
+
+  list(
+    x0 = x_min + 0.05 * xr,
+    y0 = y_max - 0.05 * yr,
+    step = 0.14 * yr
+  )
+}
+
+`%||%` <- function(a, b) if (is.null(a) || length(a) == 0 || is.na(a)) b else a
+
+# ========= 4) COMPRESSED plot builder:
+# one panel per metric; 3 regression lines overlaid (sig only)
+plot_metrics_compressed <- function(df_long, xvar, x_label, title_text,
+                                    ncol = 3) {
+  # ensure numeric x
+  df_long <- df_long %>%
+    dplyr::mutate(x = suppressWarnings(as.numeric(.data[[xvar]]))) %>%
+    dplyr::filter(!is.na(x), !is.na(response_value))
+
+  # point colors (loc1.2 -> loc_colors)
+  color_scale <- if (exists("loc_colors", inherits = TRUE)) {
+    ggplot2::scale_color_manual(values = loc_colors, na.translate = FALSE)
+  } else {
+    ggplot2::scale_color_discrete(na.translate = FALSE)
+  }
+
+  # compute sig flags and labels per metric × group (All/Atlantic/Pacific)
+  stats_df <- df_long %>%
+    dplyr::group_by(metric) %>%
     dplyr::reframe({
-      x <- suppressWarnings(as.numeric(.data[[xvar]]))
-      y <- suppressWarnings(as.numeric(response_value))
-      n <- sum(stats::complete.cases(x, y))
+      # split data for each fit
+      df_all <- dplyr::cur_data()
+      df_atl <- df_all %>% dplyr::filter(basin == "atlantic")
+      df_pac <- df_all %>% dplyr::filter(basin == "pacific")
 
-      ok <- (n > 2) &&
-        is.finite(stats::var(x, na.rm = TRUE)) && stats::var(x, na.rm = TRUE) > 0 &&
-        is.finite(stats::var(y, na.rm = TRUE)) && stats::var(y, na.rm = TRUE) > 0
+      st_all <- lm_group_stats(df_all, "x")
+      st_atl <- lm_group_stats(df_atl, "x")
+      st_pac <- lm_group_stats(df_pac, "x")
 
-      if (ok) {
-        fit <- stats::lm(y ~ x)
-        s   <- summary(fit)
-        R2    <- unname(s$r.squared)
-        p     <- unname(s$coefficients[2, 4])
-        slope <- unname(stats::coef(fit)[2])
+      # label anchors based on ALL points in this metric (keeps them in same corner)
+      anc <- label_anchor(df_all, "x")
+
+      # pack rows for sig fits only (so labels match visible lines)
+      rows <- list()
+      if (isTRUE(st_all$sig)) rows[[length(rows) + 1]] <- list("All", st_all, "black")
+      if (isTRUE(st_atl$sig)) rows[[length(rows) + 1]] <- list("Atlantic", st_atl, "red")
+      if (isTRUE(st_pac$sig)) rows[[length(rows) + 1]] <- list("Pacific", st_pac, "blue")
+
+      if (length(rows) == 0) {
+        tibble::tibble(
+          fit_group = character(),
+          is_sig = logical(),
+          label = character(),
+          col = character(),
+          x_pos = numeric(),
+          y_pos = numeric()
+        )
       } else {
-        R2 <- NA_real_; p <- NA_real_; slope <- NA_real_
+        dplyr::bind_rows(lapply(seq_along(rows), function(i) {
+          nm <- rows[[i]][[1]]
+          st <- rows[[i]][[2]]
+          cl <- rows[[i]][[3]]
+          tibble::tibble(
+            fit_group = nm,
+            is_sig = TRUE,
+            label = eq_label(st, nm),
+            col = cl,
+            x_pos = anc$x0,
+            y_pos = anc$y0 - (i - 1) * anc$step
+          )
+        }))
       }
-
-      x_min <- suppressWarnings(min(x, na.rm = TRUE))
-      x_max <- suppressWarnings(max(x, na.rm = TRUE))
-      y_min <- suppressWarnings(min(y, na.rm = TRUE))
-      y_max <- suppressWarnings(max(y, na.rm = TRUE))
-
-      xr <- if (is.finite(x_max - x_min)) x_max - x_min else 0
-      yr <- if (is.finite(y_max - y_min)) y_max - y_min else 0
-
-      x_pos <- x_min + (if (xr == 0) 0.02 * (if (x_max == 0) 1 else abs(x_max)) else 0.02 * xr)
-      y_pos <- y_max - (if (yr == 0) 0.02 * (if (y_max == 0) 1 else abs(y_max)) else 0.02 * yr)
-
-      interp <- interpret_model(R2, p)
-      label <- paste0(
-        "R² = ", ifelse(is.na(R2), "NA", sprintf("%.2f", R2)),
-        ", p = ", ifelse(is.na(p), "NA", formatC(p, format = "e", digits = 2)),
-        ", n = ", n,
-        "\nslope = ", ifelse(is.na(slope), "NA", formatC(slope, format = "g", digits = 3)),
-        "  (", interp, ")"
-      )
-
-      tibble(x_pos = x_pos, y_pos = y_pos, label = label)
     })
-}
 
-plot_response_vs_x_basin <- function(df, xvar, x_label, title_text) {
-  df_long <- make_basin_fit_data(df, xvar)
-  labs_df <- facet_lm_stats_basin(df, xvar)
+  # identify which metric/group combos are significant so we can draw only those lines
+  # We'll build separate data frames for each line color to avoid scale conflicts with point colors.
+  sig_metrics_all <- stats_df %>% dplyr::filter(fit_group == "All")      %>% dplyr::pull(metric) %>% unique()
+  sig_metrics_atl <- stats_df %>% dplyr::filter(fit_group == "Atlantic") %>% dplyr::pull(metric) %>% unique()
+  sig_metrics_pac <- stats_df %>% dplyr::filter(fit_group == "Pacific")  %>% dplyr::pull(metric) %>% unique()
 
-  ggplot(df_long, aes(x = .data[[xvar]], y = response_value)) +
-    geom_point(aes(color = factor(`loc1.2`)), alpha = 0.85) +
-    scale_color_manual(values = loc_colors) +
+  df_all_line <- df_long %>% dplyr::filter(metric %in% sig_metrics_all)
+  df_atl_line <- df_long %>% dplyr::filter(metric %in% sig_metrics_atl, basin == "atlantic")
+  df_pac_line <- df_long %>% dplyr::filter(metric %in% sig_metrics_pac, basin == "pacific")
+
+  ggplot(df_long, aes(x = x, y = response_value)) +
+    geom_point(aes(color = factor(`loc1.2`)), alpha = 0.9, size = 3) +
+    color_scale +
+
+    # sig-only lines (separate layers => no color-scale collision with loc_colors)
     geom_smooth(
+      data = df_all_line,
       aes(group = 1),
-      method = "lm", se = TRUE, color = "black"
+      method = "lm", se = TRUE, linewidth = 1,
+      color = "black",
+      inherit.aes = TRUE
     ) +
-    facet_grid(fit_group ~ metric, scales = "free_y") +
+    geom_smooth(
+      data = df_atl_line,
+      aes(group = 1),
+      method = "lm", se = TRUE, linewidth = 1,
+      color = "red",
+      inherit.aes = TRUE
+    ) +
+    geom_smooth(
+      data = df_pac_line,
+      aes(group = 1),
+      method = "lm", se = TRUE, linewidth = 1,
+      color = "blue",
+      inherit.aes = TRUE
+    ) +
+
+    facet_wrap(~ metric, ncol = ncol, scales = "free_y") +
+
     geom_text(
-      data = labs_df,
+      data = stats_df,
       aes(x = x_pos, y = y_pos, label = label),
       inherit.aes = FALSE,
-      hjust = 0, vjust = 1, size = 3
+      hjust = 0, vjust = 1,
+      size = 3.6,
+      color = stats_df$col
     ) +
-    labs(
-      title = title_text,
-      x = x_label,
-      y = NULL
-    ) +
-    theme_minimal(base_size = 12) +
+
+    labs(title = title_text, x = x_label, y = NULL) +
+
+    theme_classic(base_size = 18) +
     theme(
-      plot.title = element_text(face = "bold"),
-      strip.text = element_text(face = "bold"),
-      panel.grid.minor = element_blank(),
+      plot.title   = element_text(face = "bold"),
+      strip.text   = element_text(face = "bold", size = 14),
+      axis.title   = element_text(size = 18),
+      axis.text    = element_text(size = 14),
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 0.8),
+      axis.line    = element_blank(),
+      panel.grid   = element_blank(),
       legend.position = "none"
     )
 }
 
-# ========= 4) Distance-based plots with 3 regressions each =========
+# ========= 5) Example usage (distance + population) =========
+# Pick any xvar from your joined table, and you get ONE compressed figure (6 metrics panels)
 
-plot_city <- long_dat %>%
-  mutate(dist_city_km = suppressWarnings(as.numeric(dist_city_km))) %>%
-  plot_response_vs_x_basin(
-    xvar       = "dist_city_km",
-    x_label    = "Distance to city (km)",
-    title_text = "Distance to City vs. Reef Metrics (All / Atlantic / Pacific fits)"
-  )
+plot_city <- plot_metrics_compressed(
+  df_long     = long_dat %>% mutate(dist_city_km = suppressWarnings(as.numeric(dist_city_km))),
+  xvar        = "dist_city_km",
+  x_label     = "Distance to city (km)",
+  title_text  = "Distance to City vs. Reef Metrics (All=black, Atlantic=red, Pacific=blue; lines only if p < 0.05)",
+  ncol        = 3
+)
 
-plot_port <- long_dat %>%
-  mutate(dist_port_km = suppressWarnings(as.numeric(dist_port_km))) %>%
-  plot_response_vs_x_basin(
-    xvar       = "dist_port_km",
-    x_label    = "Distance to port (km)",
-    title_text = "Distance to Port vs. Reef Metrics (All / Atlantic / Pacific fits)"
-  )
+plot_port <- plot_metrics_compressed(
+  df_long     = long_dat %>% mutate(dist_port_km = suppressWarnings(as.numeric(dist_port_km))),
+  xvar        = "dist_port_km",
+  x_label     = "Distance to port (km)",
+  title_text  = "Distance to Port vs. Reef Metrics (All=black, Atlantic=red, Pacific=blue; lines only if p < 0.05)",
+  ncol        = 3
+)
 
-plot_coast <- long_dat %>%
-  mutate(dist_coast_km = suppressWarnings(as.numeric(dist_coast_km))) %>%
-  plot_response_vs_x_basin(
-    xvar       = "dist_coast_km",
-    x_label    = "Distance to coast (km)",
-    title_text = "Distance to Coast vs. Reef Metrics (All / Atlantic / Pacific fits)"
-  )
+plot_coast <- plot_metrics_compressed(
+  df_long     = long_dat %>% mutate(dist_coast_km = suppressWarnings(as.numeric(dist_coast_km))),
+  xvar        = "dist_coast_km",
+  x_label     = "Distance to coast (km)",
+  title_text  = "Distance to Coast vs. Reef Metrics (All=black, Atlantic=red, Pacific=blue; lines only if p < 0.05)",
+  ncol        = 3
+)
 
-plot_access <- long_dat %>%
-  mutate(dist_human_access_km = suppressWarnings(as.numeric(dist_human_access_km))) %>%
-  plot_response_vs_x_basin(
-    xvar       = "dist_human_access_km",
-    x_label    = "Distance to human access (km)",
-    title_text = "Distance to Human Access vs. Reef Metrics (All / Atlantic / Pacific fits)"
-  )
+plot_access <- plot_metrics_compressed(
+  df_long     = long_dat %>% mutate(dist_human_access_km = suppressWarnings(as.numeric(dist_human_access_km))),
+  xvar        = "dist_human_access_km",
+  x_label     = "Distance to human access (km)",
+  title_text  = "Distance to Human Access vs. Reef Metrics (All=black, Atlantic=red, Pacific=blue; lines only if p < 0.05)",
+  ncol        = 3
+)
 
-# ========= 5) Population-based plots (raw, 3 regressions each) =========
+plot_pop5 <- plot_metrics_compressed(
+  df_long     = long_dat %>% mutate(population_5km_2005 = suppressWarnings(as.numeric(population_5km_2005))),
+  xvar        = "population_5km_2005",
+  x_label     = "Population within 5 km (2005)",
+  title_text  = "Population within 5 km vs. Reef Metrics (All=black, Atlantic=red, Pacific=blue; lines only if p < 0.05)",
+  ncol        = 3
+)
 
-make_pop_plot_raw <- function(raw_col, label_km) {
-  if (!raw_col %in% names(long_dat)) return(NULL)
-
-  pretty_label <- sprintf("Population within %s (2005)", label_km)
-
-  long_dat %>%
-    mutate(!!raw_col := suppressWarnings(as.numeric(.data[[raw_col]]))) %>%
-    plot_response_vs_x_basin(
-      xvar       = raw_col,
-      x_label    = pretty_label,
-      title_text = paste0(
-        pretty_label,
-        " vs. Reef Metrics (All / Atlantic / Pacific fits)"
-      )
-    )
-}
-
-plot_pop5   <- make_pop_plot_raw("population_5km_2005",   "5 km")
-plot_pop10  <- make_pop_plot_raw("population_10km_2005",  "10 km")
-plot_pop50  <- make_pop_plot_raw("population_50km_2005",  "50 km")
-plot_pop100 <- make_pop_plot_raw("population_100km_2005", "100 km")
-
-# ========= 6) Print all plots =========
+# ========= 6) Print =========
 print(plot_city)
 print(plot_port)
 print(plot_coast)
 print(plot_access)
-
-if (!is.null(plot_pop5))   print(plot_pop5)   else message("population_5km_2005 not found—skipping plot.")
-if (!is.null(plot_pop10))  print(plot_pop10)  else message("population_10km_2005 not found—skipping plot.")
-if (!is.null(plot_pop50))  print(plot_pop50)  else message("population_50km_2005 not found—skipping plot.")
-if (!is.null(plot_pop100)) print(plot_pop100) else message("population_100km_2005 not found—skipping plot.")
+print(plot_pop5)
 ```
 
 ### Human pressure all points
@@ -5096,7 +5253,7 @@ suppressPackageStartupMessages({
   library(rlang)
   library(tibble)
   library(stringr)
-  library(ggh4x)   # <- enables per-panel y-axes in facet_grid layout
+  library(patchwork)  # for arranging metric panels
 })
 
 # ====== 1) Join barData to human stats at loc3, ensure loc1.2 & basin ======
@@ -5145,14 +5302,20 @@ if (!"basin" %in% names(barLoc3_merged)) {
 }
 barLoc3_merged$basin <- tolower(as.character(barLoc3_merged$basin))
 
-# ====== 2) Responses (from barData) & long format ======
+# ====== 2) Responses (from barData) & long format (NOW includes density if present) ======
+# NOTE: density must exist in barData as `deltaDensity_gcm3y` or similar if you want it.
+# If you DO have a density response column in barData, add it here.
 responses <- c(
   accretion_mm3cm2y      = "accretion",
   grazing_mm3cm2y        = "grazing",
   macroboring_mm3cm2y    = "macroboring",
   deltaMass_mgcm2y       = "mass",
-  deltaVolume_mm3cm2y    = "volume"
+  deltaVolume_mm3cm2y    = "volume",
+  deltaDensity_mgcm3c2y     = "density"   # <-- CHANGE THIS NAME IF YOUR COLUMN IS DIFFERENT
 )
+
+# keep only response columns that exist (avoids errors if density column name differs)
+responses <- responses[names(responses) %in% names(barLoc3_merged)]
 
 long_dat <- barLoc3_merged %>%
   dplyr::select(
@@ -5168,170 +5331,253 @@ long_dat <- barLoc3_merged %>%
   dplyr::mutate(
     metric = dplyr::recode(response_col, !!!setNames(unname(responses), names(responses))),
     response_value = suppressWarnings(as.numeric(response_value)),
-    metric = factor(metric, levels = unname(responses))  # lock 5 columns order
+    basin = tolower(as.character(basin)),
+    metric = factor(metric, levels = unname(responses))  # facet order
   )
 
-# ====== 3) Helpers for multi-basin fits (All / Atlantic / Pacific) ======
-interpret_model <- function(R2, p) {
-  if (is.na(R2) || is.na(p)) return("insufficient data")
-  if (p >= 0.05) return("not significant")
-  if (R2 < 0.10) return("weak but significant")
-  if (R2 < 0.30) return("moderate")
-  "strong"
+# ====== 3) Helpers: per-metric sig-only lines (All/Atlantic/Pacific) + equation labels ======
+`%||%` <- function(a, b) if (is.null(a) || length(a) == 0 || is.na(a)) b else a
+
+lm_group_stats <- function(df, xvar, yvar = "response_value") {
+  x <- suppressWarnings(as.numeric(df[[xvar]]))
+  y <- suppressWarnings(as.numeric(df[[yvar]]))
+  cc <- stats::complete.cases(x, y)
+  x <- x[cc]; y <- y[cc]
+  n <- length(x)
+
+  ok <- (n > 2) &&
+    is.finite(stats::var(x)) && stats::var(x) > 0 &&
+    is.finite(stats::var(y)) && stats::var(y) > 0
+
+  if (!ok) return(list(ok = FALSE, sig = FALSE, n = n,
+                       a = NA_real_, b = NA_real_, r2 = NA_real_, p = NA_real_))
+
+  fit <- stats::lm(y ~ x)
+  s   <- summary(fit)
+  a  <- unname(stats::coef(fit)[1])
+  b  <- unname(stats::coef(fit)[2])
+  r2 <- unname(s$r.squared)
+  p  <- unname(s$coefficients[2, 4])
+
+  list(ok = TRUE, sig = is.finite(p) && !is.na(p) && p < 0.05, n = n,
+       a = a, b = b, r2 = r2, p = p)
 }
 
-make_basin_fit_data <- function(df, xvar) {
-  df_base <- df %>% filter(!is.na(response_value))
-  bind_rows(
-    df_base %>% mutate(fit_group = "All data"),
-    df_base %>% filter(basin == "atlantic") %>% mutate(fit_group = "Atlantic"),
-    df_base %>% filter(basin == "pacific")  %>% mutate(fit_group = "Pacific")
-  ) %>%
-    filter(!is.na(.data[[xvar]])) %>%
-    mutate(fit_group = factor(fit_group, levels = c("All data","Atlantic","Pacific"))) # lock 3 rows order
+eq_label <- function(st, name) {
+  paste0(
+    name, ": ",
+    "y = ", formatC(st$a, digits = 3, format = "f"),
+    " + ", formatC(st$b, digits = 3, format = "f"), "x\n",
+    "R² = ", formatC(st$r2, digits = 2, format = "f"),
+    ", p = ", formatC(st$p, format = "e", digits = 2),
+    ", n = ", st$n
+  )
 }
 
-facet_lm_stats_basin <- function(df, xvar) {
-  df_long <- make_basin_fit_data(df, xvar)
+label_anchor <- function(df, xvar, yvar = "response_value") {
+  x <- suppressWarnings(as.numeric(df[[xvar]]))
+  y <- suppressWarnings(as.numeric(df[[yvar]]))
+  cc <- stats::complete.cases(x, y)
+  x <- x[cc]; y <- y[cc]
 
-  df_long %>%
-    dplyr::group_by(metric, fit_group) %>%
-    dplyr::reframe({
-      x <- suppressWarnings(as.numeric(.data[[xvar]]))
-      y <- suppressWarnings(as.numeric(response_value))
-      n <- sum(stats::complete.cases(x, y))
+  if (length(x) < 2 || length(y) < 2) return(list(x0 = NA_real_, y0 = NA_real_, step = NA_real_))
 
-      ok <- (n > 2) &&
-        is.finite(stats::var(x, na.rm = TRUE)) && stats::var(x, na.rm = TRUE) > 0 &&
-        is.finite(stats::var(y, na.rm = TRUE)) && stats::var(y, na.rm = TRUE) > 0
+  x_min <- min(x, na.rm = TRUE); x_max <- max(x, na.rm = TRUE)
+  y_min <- min(y, na.rm = TRUE); y_max <- max(y, na.rm = TRUE)
+  xr <- x_max - x_min; yr <- y_max - y_min
+  if (!is.finite(xr) || xr == 0) xr <- abs(x_max) %||% 1
+  if (!is.finite(yr) || yr == 0) yr <- abs(y_max) %||% 1
 
-      if (ok) {
-        fit <- stats::lm(y ~ x)
-        s   <- summary(fit)
-        R2    <- unname(s$r.squared)
-        p     <- unname(s$coefficients[2, 4])
-        slope <- unname(stats::coef(fit)[2])
-      } else {
-        R2 <- NA_real_; p <- NA_real_; slope <- NA_real_
-      }
-
-      x_min <- suppressWarnings(min(x, na.rm = TRUE))
-      x_max <- suppressWarnings(max(x, na.rm = TRUE))
-      y_min <- suppressWarnings(min(y, na.rm = TRUE))
-      y_max <- suppressWarnings(max(y, na.rm = TRUE))
-
-      xr <- if (is.finite(x_max - x_min)) x_max - x_min else 0
-      yr <- if (is.finite(y_max - y_min)) y_max - y_min else 0
-
-      x_pos <- x_min + (if (xr == 0) 0.02 * (if (x_max == 0) 1 else abs(x_max)) else 0.02 * xr)
-      y_pos <- y_max - (if (yr == 0) 0.02 * (if (y_max == 0) 1 else abs(y_max)) else 0.02 * yr)
-
-      interp <- interpret_model(R2, p)
-      label <- paste0(
-        "R² = ", ifelse(is.na(R2), "NA", sprintf("%.2f", R2)),
-        ", p = ", ifelse(is.na(p), "NA", formatC(p, format = "e", digits = 2)),
-        ", n = ", n,
-        "\nslope = ", ifelse(is.na(slope), "NA", formatC(slope, format = "g", digits = 3)),
-        "  (", interp, ")"
-      )
-
-      is_sig <- !is.na(p) && p < 0.05
-      text_col <- if (is_sig) "#1B9E77" else "grey20"
-
-      tibble(x_pos = x_pos, y_pos = y_pos, label = label, text_col = text_col)
-    })
+  list(x0 = x_min + 0.05 * xr, y0 = y_max - 0.05 * yr, step = 0.14 * yr)
 }
 
-# ====== 4) Plot function (5×3 grid; truly per-panel y using ggh4x) ======
-plot_response_vs_x_basin <- function(df, xvar, x_label, title_text) {
-  df_long <- make_basin_fit_data(df, xvar)
-  labs_df <- facet_lm_stats_basin(df, xvar)
+plot_metrics_compressed <- function(df_long, xvar, x_label, title_text, ncol = 3) {
 
+  df_long <- df_long %>%
+    dplyr::mutate(x = suppressWarnings(as.numeric(.data[[xvar]]))) %>%
+    dplyr::filter(!is.na(x), !is.na(response_value))
+
+  # point color scale
   color_scale <- if (exists("loc_colors", inherits = TRUE)) {
-    scale_color_manual(values = loc_colors)
+    ggplot2::scale_color_manual(values = loc_colors, na.translate = FALSE)
   } else {
-    scale_color_discrete()
+    ggplot2::scale_color_discrete(na.translate = FALSE)
   }
 
-  ggplot(df_long, aes(x = .data[[xvar]], y = response_value)) +
-    geom_point(aes(color = factor(`loc1.2`)), alpha = 0.85) +
+  # sig labels per metric
+  stats_df <- df_long %>%
+    dplyr::group_by(metric) %>%
+    dplyr::reframe({
+      df_all <- dplyr::cur_data()
+      df_atl <- df_all %>% dplyr::filter(basin == "atlantic")
+      df_pac <- df_all %>% dplyr::filter(basin == "pacific")
+
+      st_all <- lm_group_stats(df_all, "x")
+      st_atl <- lm_group_stats(df_atl, "x")
+      st_pac <- lm_group_stats(df_pac, "x")
+
+      anc <- label_anchor(df_all, "x")
+
+      rows <- list()
+      if (isTRUE(st_all$sig)) rows[[length(rows) + 1]] <- list("All", st_all, "black")
+      if (isTRUE(st_atl$sig)) rows[[length(rows) + 1]] <- list("Atlantic", st_atl, "red")
+      if (isTRUE(st_pac$sig)) rows[[length(rows) + 1]] <- list("Pacific", st_pac, "blue")
+
+      if (length(rows) == 0) {
+        tibble::tibble(fit_group = character(), label = character(), col = character(),
+                       x_pos = numeric(), y_pos = numeric())
+      } else {
+        dplyr::bind_rows(lapply(seq_along(rows), function(i) {
+          nm <- rows[[i]][[1]]
+          st <- rows[[i]][[2]]
+          cl <- rows[[i]][[3]]
+          tibble::tibble(
+            fit_group = nm,
+            label = eq_label(st, nm),
+            col = cl,
+            x_pos = anc$x0,
+            y_pos = anc$y0 - (i - 1) * anc$step
+          )
+        }))
+      }
+    })
+
+  # which metrics have sig lines for each group
+  sig_metrics_all <- stats_df %>% dplyr::filter(fit_group == "All")      %>% dplyr::pull(metric) %>% unique()
+  sig_metrics_atl <- stats_df %>% dplyr::filter(fit_group == "Atlantic") %>% dplyr::pull(metric) %>% unique()
+  sig_metrics_pac <- stats_df %>% dplyr::filter(fit_group == "Pacific")  %>% dplyr::pull(metric) %>% unique()
+
+  df_all_line <- df_long %>% dplyr::filter(metric %in% sig_metrics_all)
+  df_atl_line <- df_long %>% dplyr::filter(metric %in% sig_metrics_atl, basin == "atlantic")
+  df_pac_line <- df_long %>% dplyr::filter(metric %in% sig_metrics_pac, basin == "pacific")
+
+  ggplot(df_long, aes(x = x, y = response_value)) +
+    geom_point(aes(color = factor(`loc1.2`)), alpha = 0.9, size = 3) +
     color_scale +
-    geom_smooth(aes(group = 1), method = "lm", se = TRUE, color = "black") +
-    # >>> Keep 5 columns (metrics) × 3 rows (fit_group) WITH independent y per panel <<<
-    ggh4x::facet_grid2(
-      rows  = vars(fit_group),
-      cols  = vars(metric),
-      scales = "free_y",
-      independent = "y"  # <- per-panel y-axes (not shared within rows)
+
+    # sig-only lines (no scale conflicts with loc_colors)
+    geom_smooth(
+      data = df_all_line,
+      aes(group = 1),
+      method = "lm", se = TRUE, linewidth = 1,
+      color = "black",
+      inherit.aes = TRUE
     ) +
+    geom_smooth(
+      data = df_atl_line,
+      aes(group = 1),
+      method = "lm", se = TRUE, linewidth = 1,
+      color = "red",
+      inherit.aes = TRUE
+    ) +
+    geom_smooth(
+      data = df_pac_line,
+      aes(group = 1),
+      method = "lm", se = TRUE, linewidth = 1,
+      color = "blue",
+      inherit.aes = TRUE
+    ) +
+
+    facet_wrap(~ metric, ncol = ncol, scales = "free_y") +
+
     geom_text(
-      data = labs_df,
-      aes(x = x_pos, y = y_pos, label = label, color = I(text_col)),
-      inherit.aes = FALSE, hjust = 0, vjust = 1, size = 3
+      data = stats_df,
+      aes(x = x_pos, y = y_pos, label = label),
+      inherit.aes = FALSE,
+      hjust = 0, vjust = 1,
+      size = 3.6,
+      color = stats_df$col
     ) +
+
     labs(title = title_text, x = x_label, y = NULL) +
-    theme_minimal(base_size = 12) +
+
+    theme_classic(base_size = 18) +
     theme(
-      plot.title = element_text(face = "bold"),
-      strip.text = element_text(face = "bold"),
-      panel.grid.minor = element_blank(),
+      plot.title   = element_text(face = "bold"),
+      strip.text   = element_text(face = "bold", size = 14),
+      axis.title   = element_text(size = 18),
+      axis.text    = element_text(size = 14),
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 0.8),
+      axis.line    = element_blank(),
+      panel.grid   = element_blank(),
       legend.position = "none"
     )
 }
 
-# ====== 5) Distance-based plots (x = human distances; y = bar responses) ======
-plot_city <- long_dat %>%
-  mutate(dist_city_km = suppressWarnings(as.numeric(dist_city_km))) %>%
-  plot_response_vs_x_basin(
-    xvar       = "dist_city_km",
-    x_label    = "Distance to city (km)",
-    title_text = "Distance to City vs. Bar Responses (All / Atlantic / Pacific fits)"
+# ====== 4) Build COMPRESSED figures (one per driver) ======
+plot_city <- plot_metrics_compressed(
+  df_long    = long_dat %>% mutate(dist_city_km = suppressWarnings(as.numeric(dist_city_km))),
+  xvar       = "dist_city_km",
+  x_label    = "Distance to city (km)",
+  title_text = "Distance to City vs. Bar Responses (All=black, Atlantic=red, Pacific=blue; lines only if p < 0.05)",
+  ncol       = 3
+)
+
+plot_port <- plot_metrics_compressed(
+  df_long    = long_dat %>% mutate(dist_port_km = suppressWarnings(as.numeric(dist_port_km))),
+  xvar       = "dist_port_km",
+  x_label    = "Distance to port (km)",
+  title_text = "Distance to Port vs. Bar Responses (All=black, Atlantic=red, Pacific=blue; lines only if p < 0.05)",
+  ncol       = 3
+)
+
+plot_coast <- plot_metrics_compressed(
+  df_long    = long_dat %>% mutate(dist_coast_km = suppressWarnings(as.numeric(dist_coast_km))),
+  xvar       = "dist_coast_km",
+  x_label    = "Distance to coast (km)",
+  title_text = "Distance to Coast vs. Bar Responses (All=black, Atlantic=red, Pacific=blue; lines only if p < 0.05)",
+  ncol       = 3
+)
+
+plot_access <- plot_metrics_compressed(
+  df_long    = long_dat %>% mutate(dist_human_access_km = suppressWarnings(as.numeric(dist_human_access_km))),
+  xvar       = "dist_human_access_km",
+  x_label    = "Distance to human access (km)",
+  title_text = "Distance to Human Access vs. Bar Responses (All=black, Atlantic=red, Pacific=blue; lines only if p < 0.05)",
+  ncol       = 3
+)
+
+plot_pop5 <- if ("population_5km_2005" %in% names(long_dat)) {
+  plot_metrics_compressed(
+    df_long    = long_dat %>% mutate(population_5km_2005 = suppressWarnings(as.numeric(population_5km_2005))),
+    xvar       = "population_5km_2005",
+    x_label    = "Population within 5 km (2005)",
+    title_text = "Population within 5 km vs. Bar Responses (All=black, Atlantic=red, Pacific=blue; lines only if p < 0.05)",
+    ncol       = 3
   )
+} else NULL
 
-plot_port <- long_dat %>%
-  mutate(dist_port_km = suppressWarnings(as.numeric(dist_port_km))) %>%
-  plot_response_vs_x_basin(
-    xvar       = "dist_port_km",
-    x_label    = "Distance to port (km)",
-    title_text = "Distance to Port vs. Bar Responses (All / Atlantic / Pacific fits)"
+plot_pop10 <- if ("population_10km_2005" %in% names(long_dat)) {
+  plot_metrics_compressed(
+    df_long    = long_dat %>% mutate(population_10km_2005 = suppressWarnings(as.numeric(population_10km_2005))),
+    xvar       = "population_10km_2005",
+    x_label    = "Population within 10 km (2005)",
+    title_text = "Population within 10 km vs. Bar Responses (All=black, Atlantic=red, Pacific=blue; lines only if p < 0.05)",
+    ncol       = 3
   )
+} else NULL
 
-plot_coast <- long_dat %>%
-  mutate(dist_coast_km = suppressWarnings(as.numeric(dist_coast_km))) %>%
-  plot_response_vs_x_basin(
-    xvar       = "dist_coast_km",
-    x_label    = "Distance to coast (km)",
-    title_text = "Distance to Coast vs. Bar Responses (All / Atlantic / Pacific fits)"
+plot_pop50 <- if ("population_50km_2005" %in% names(long_dat)) {
+  plot_metrics_compressed(
+    df_long    = long_dat %>% mutate(population_50km_2005 = suppressWarnings(as.numeric(population_50km_2005))),
+    xvar       = "population_50km_2005",
+    x_label    = "Population within 50 km (2005)",
+    title_text = "Population within 50 km vs. Bar Responses (All=black, Atlantic=red, Pacific=blue; lines only if p < 0.05)",
+    ncol       = 3
   )
+} else NULL
 
-plot_access <- long_dat %>%
-  mutate(dist_human_access_km = suppressWarnings(as.numeric(dist_human_access_km))) %>%
-  plot_response_vs_x_basin(
-    xvar       = "dist_human_access_km",
-    x_label    = "Distance to human access (km)",
-    title_text = "Distance to Human Access vs. Bar Responses (All / Atlantic / Pacific fits)"
+plot_pop100 <- if ("population_100km_2005" %in% names(long_dat)) {
+  plot_metrics_compressed(
+    df_long    = long_dat %>% mutate(population_100km_2005 = suppressWarnings(as.numeric(population_100km_2005))),
+    xvar       = "population_100km_2005",
+    x_label    = "Population within 100 km (2005)",
+    title_text = "Population within 100 km vs. Bar Responses (All=black, Atlantic=red, Pacific=blue; lines only if p < 0.05)",
+    ncol       = 3
   )
+} else NULL
 
-# ====== 6) Population-based plots (x = population rings; y = bar responses) ======
-make_pop_plot_raw <- function(raw_col, label_km) {
-  if (!raw_col %in% names(long_dat)) return(NULL)
-  pretty_label <- sprintf("Population within %s (2005)", label_km)
-
-  long_dat %>%
-    mutate(!!raw_col := suppressWarnings(as.numeric(.data[[raw_col]]))) %>%
-    plot_response_vs_x_basin(
-      xvar       = raw_col,
-      x_label    = pretty_label,
-      title_text = paste0(pretty_label, " vs. Bar Responses (All / Atlantic / Pacific fits)")
-    )
-}
-
-plot_pop5   <- make_pop_plot_raw("population_5km_2005",   "5 km")
-plot_pop10  <- make_pop_plot_raw("population_10km_2005",  "10 km")
-plot_pop50  <- make_pop_plot_raw("population_50km_2005",  "50 km")
-plot_pop100 <- make_pop_plot_raw("population_100km_2005", "100 km")
-
-# ====== 7) Print all plots ======
+# ====== 5) Print ======
 print(plot_city)
 print(plot_port)
 print(plot_coast)
@@ -5341,7 +5587,6 @@ if (!is.null(plot_pop5))   print(plot_pop5)   else message("population_5km_2005 
 if (!is.null(plot_pop10))  print(plot_pop10)  else message("population_10km_2005 not found—skipping plot.")
 if (!is.null(plot_pop50))  print(plot_pop50)  else message("population_50km_2005 not found—skipping plot.")
 if (!is.null(plot_pop100)) print(plot_pop100) else message("population_100km_2005 not found—skipping plot.")
-
 ```
 
 ### Human pressure as gravity index
