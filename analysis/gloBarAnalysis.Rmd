@@ -838,55 +838,109 @@ unmatchedDepth_atlantic <- list(
 unmatchedDepth_atlantic
 ```
 
+```{r add skeletal source to BMU data, echo=FALSE}
+# Load BMU database (lookup table)
+bmuDatabase <- read_csv(file.path(data_dir, "NCRMP_BMU_DatabaseNewFeb2025.csv"), show_col_types = FALSE)
+
+# Join FromColony onto barData as skeletalSource (Tag_num -> tagNum)
+barData <- barData %>%
+  dplyr::mutate(tagNum_chr = as.character(tagNum)) %>%   # TEMP join key
+  dplyr::left_join(
+    bmuDatabase %>%
+      dplyr::transmute(
+        tagNum_chr      = as.character(Tag_num),
+        skeletalSource  = as.character(FromColony)
+      ),
+    by = "tagNum_chr"
+  ) %>%
+  dplyr::select(-tagNum_chr) 
+
+cat("Non-missing skeletalSource:",
+    sum(!is.na(barData$skeletalSource)), "\n")
+
+# See which tags failed to match
+barData %>%
+  filter(is.na(skeletalSource)) %>%
+  distinct(tagNum) %>%
+  arrange(tagNum) %>%
+  print(n = 20)
+```
+
 ```{r mass_vs_volume_fill_and_plot, fig.width=10, fig.height=3.8, echo=FALSE, message=FALSE, warning=FALSE}
+# =========================
 # 0) Inputs
+# =========================
 target_species_fill <- c("ofav", "plob")   # only these get imputed
 xvar <- "massBlockPre"
 yvar <- "volumeBlockPre"
 
-# 1) Fit species-specific LMs (measured only) for ofav & plob
+# define skeletalSource grouping for plob but keep ofav pooled
+barData <- barData %>%
+  dplyr::mutate(
+    plob_source_group = dplyr::case_when(
+      species == "plob" & skeletalSource %in% c("Colonies from AIMS", "Cores") ~ "AIMS",
+      species == "plob" & skeletalSource %in% c("Colonies from CREP")          ~ "CREP",
+      species == "plob"                                                       ~ NA_character_,
+      TRUE                                                                    ~ NA_character_
+    ),
+    model_group = dplyr::case_when(
+      species == "plob" ~ plob_source_group,
+      species == "ofav" ~ "ALL",
+      TRUE              ~ NA_character_
+    )
+  )
+
+# =========================
+# 1) Fit LMs (measured only -- ofav pooled, plot fit separately by AIMS or Cores vs CREP)
+# =========================
 lm_models <- barData %>%
-  filter(
+  dplyr::filter(
     species %in% target_species_fill,
     !is.na(.data[[xvar]]),
-    !is.na(.data[[yvar]])
+    !is.na(.data[[yvar]]),
+    !is.na(model_group)
   ) %>%
-  group_by(species) %>%
-  summarise(
-    model = list(lm(as.formula(paste0(yvar, " ~ ", xvar)), data = cur_data())),
+  dplyr::group_by(species, model_group) %>%
+  dplyr::summarise(
+    model = list(lm(stats::as.formula(paste0(yvar, " ~ ", xvar)), data = dplyr::cur_data())),
     .groups = "drop"
   )
+
+# =========================
 # 2) Identify rows to fill and predict missing volumeBlockPre
+# =========================
 to_fill <- barData %>%
-  filter(
+  dplyr::filter(
     species %in% target_species_fill,
     !is.na(.data[[xvar]]),
-    is.na(.data[[yvar]])
+    is.na(.data[[yvar]]),
+    !is.na(model_group)
   ) %>%
-  left_join(lm_models, by = "species") %>%
-  rowwise() %>%
-  mutate(
-    volumeBlockPre_pred = predict(model, newdata = cur_data())
+  dplyr::left_join(lm_models, by = c("species", "model_group")) %>%  
+  dplyr::rowwise() %>%                                              
+  dplyr::mutate(
+    volumeBlockPre_pred = stats::predict(model, newdata = dplyr::cur_data())
   ) %>%
-  ungroup()
+  dplyr::ungroup()
 
 # tagNum lists (calculated)
 tagNums_calculated <- to_fill %>%
-  select(species, tagNum) %>%
-  arrange(species, tagNum)
+  dplyr::select(species, tagNum) %>%
+  dplyr::arrange(species, tagNum)
 
-tagNums_ofav <- tagNums_calculated %>% filter(species == "ofav") %>% pull(tagNum)
-tagNums_plob <- tagNums_calculated %>% filter(species == "plob") %>% pull(tagNum)
+tagNums_ofav <- tagNums_calculated %>% dplyr::filter(species == "ofav") %>% dplyr::pull(tagNum)
+tagNums_plob <- tagNums_calculated %>% dplyr::filter(species == "plob") %>% dplyr::pull(tagNum)
 
+# =========================
 # 3) Merge predictions back into barData (fill ONLY missing volumeBlockPre)
-#    Also add a provenance flag
+# =========================
 barData <- barData %>%
-  left_join(
-    to_fill %>% select(tagNum, volumeBlockPre_pred),
+  dplyr::left_join(
+    to_fill %>% dplyr::select(tagNum, volumeBlockPre_pred),
     by = "tagNum"
   ) %>%
-  mutate(
-    volumeBlockPre_source = case_when(
+  dplyr::mutate(
+    volumeBlockPre_source = dplyr::case_when(
       is.na(.data[[yvar]]) & !is.na(volumeBlockPre_pred) ~ "predicted_from_mass",
       !is.na(.data[[yvar]])                              ~ "measured",
       TRUE                                               ~ NA_character_
@@ -897,51 +951,49 @@ barData <- barData %>%
       .data[[yvar]]
     )
   ) %>%
-  select(-volumeBlockPre_pred)
+  dplyr::select(-volumeBlockPre_pred)
+
+# =========================
 # 4) Build 2-panel plot for species that have BOTH mass & volume (after fill)
-#    LM stats (equation/R2/p) are computed from MEASURED-only complete cases
 # =========================
 plot_df <- barData %>%
-  filter(!is.na(.data[[xvar]]), !is.na(.data[[yvar]]), !is.na(species))
+  dplyr::filter(!is.na(.data[[xvar]]), !is.na(.data[[yvar]]), !is.na(species)) %>%
+  dplyr::mutate(panel = dplyr::case_when(
+    species == "ofav" ~ "ofav",
+    species == "plob" & model_group == "AIMS" ~ "plob (AIMS)",
+    species == "plob" & model_group == "CREP" ~ "plob (CREP)",
+    TRUE ~ NA_character_
+  )) %>%
+  dplyr::filter(!is.na(panel))
 
-# pick the 2 species that have BOTH fields available (after fill)
-species2 <- plot_df %>%
-  count(species, name = "n_complete") %>%
-  arrange(desc(n_complete), species) %>%
-  slice_head(n = 2) %>%
-  pull(species)
-
-plot_df2 <- plot_df %>% filter(species %in% species2)
-
-# lm stats per species from MEASURED complete cases only (so imputation doesn't bias fit)
-lm_stats <- barData %>%
-  filter(
-    species %in% species2,
-    !is.na(.data[[xvar]]),
-    !is.na(.data[[yvar]])
-  ) %>%
-  group_by(species) %>%
-  do({
-    m  <- lm(as.formula(paste0(yvar, " ~ ", xvar)), data = .)
+# lm stats per species from MEASURED complete cases only
+lm_stats <- plot_df %>%
+  dplyr::filter(volumeBlockPre_source == "measured") %>%
+  dplyr::group_by(panel) %>%
+  dplyr::do({
+    m  <- lm(stats::as.formula(paste0(yvar, " ~ ", xvar)), data = .)
     sm <- summary(m)
-    tibble(
+    tibble::tibble(
       intercept = coef(m)[1],
       slope     = coef(m)[2],
       r2        = sm$r.squared,
       p         = coef(sm)[2, 4]
     )
   }) %>%
-  ungroup() %>%
-  mutate(
+  dplyr::ungroup() %>%
+  dplyr::mutate(
     label = sprintf("y = %.2f + %.2fx\nR² = %.2f\np = %.3g", intercept, slope, r2, p)
   )
 
 # =========================
 # 5) Plot (different shapes for measured vs predicted)
 # =========================
-ggplot(plot_df2, aes(x = .data[[xvar]], y = .data[[yvar]])) +
-  geom_point(aes(shape = volumeBlockPre_source), size = 2, alpha = 0.85) +
-  geom_smooth(method = "lm", se = FALSE, linewidth = 0.8) +
+plot_df <- plot_df %>%
+  dplyr::mutate(deployYear = lubridate::year(lubridate::ymd(dateDeployment)))
+
+ggplot(plot_df, aes(x = .data[[xvar]], y = .data[[yvar]])) +
+  geom_point(aes(shape = volumeBlockPre_source, color = factor(deployYear)), size = 2, alpha = 0.85) +
+  geom_smooth(aes(group = panel), method = "lm", se = FALSE, linewidth = 0.8) +
   geom_text(
     data = lm_stats,
     aes(x = -Inf, y = Inf, label = label),
@@ -949,7 +1001,7 @@ ggplot(plot_df2, aes(x = .data[[xvar]], y = .data[[yvar]])) +
     hjust = -0.05, vjust = 1.1,
     size = 3.6
   ) +
-  facet_wrap(~ species, nrow = 1, scales = "free") +
+  facet_wrap(~ panel, nrow = 1, scales = "free") +
   scale_shape_manual(values = c(measured = 16, predicted_from_mass = 1)) +
   labs(
     x = "massBlockPre",
@@ -963,13 +1015,12 @@ ggplot(plot_df2, aes(x = .data[[xvar]], y = .data[[yvar]])) +
   )
 
 # =========================
-# 6) Print tagNum lists of calculated values (as plain output)
+# 6) Print tagNum lists of calculated values
 # =========================
 cat("\nCalculated (imputed) volumeBlockPre tagNum values:\n")
 cat("  ofav:", if (length(tagNums_ofav)) paste(tagNums_ofav, collapse = ", ") else "(none)", "\n")
 cat("  plob:", if (length(tagNums_plob)) paste(tagNums_plob, collapse = ", ") else "(none)", "\n")
 ```
-
 
 ```{r calculateBarRates, echo=FALSE}
 # Derived metrics (area/time standardized)
