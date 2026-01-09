@@ -413,7 +413,7 @@ dec2025Update_path   <- file.path(data_dir, "Pac_Atl_NCRMP_2024_updateDec2025.xl
 
 #Parrotfish directory and paths
 p_dir <- file.path(rootFolder, "data", "parrotfish")
-atl_comm_path <- file.path(p_dir, "parrotfish_BMUs_Atlantic.csv")
+atl_comm_path <- file.path(p_dir, "parrotfish_BMUs_Atlantic_reefBudgetGrazingAdded.csv")
 pac_comm_path <- file.path(p_dir, "parrotfish_BMUs_Pacific.csv")
 atl_fxn_path  <- file.path(p_dir, "parrotfishFXN_BMUs_Atlantic.csv")
 pac_fxn_path  <- file.path(p_dir, "parrotfishFXN_BMUs_Pacific.csv")
@@ -1750,21 +1750,24 @@ There are a total of `r nParrotSurveys` parrot surveys included in this study. S
 
 ### Unify parrot tables and calculate stats at loc3 level
 ```{r unifyParrotTablesLoc3, echo=FALSE}
+
 # ---------- Clean & standardize ----------
 parrotCommunityData_clean <- parrotCommunityData %>%
   mutate(
-    across(c(basin, loc1, loc2, loc3), ~ .x |> as.character() |> str_squish()),
-    `loc1.2` = if_else(is.na(loc2) | loc2 == "", loc1, paste0(loc1, ".", loc2)) |> str_squish()
+    across(c(basin, loc1, loc2, loc3), ~ .x |> as.character() |> stringr::str_squish()),
+    `loc1.2` = if_else(is.na(loc2) | loc2 == "", loc1, paste0(loc1, ".", loc2)) |>
+      stringr::str_squish()
   )
 
 parrotFXNData_clean <- parrotFXNData %>%
   mutate(
-    across(c(basin, loc1, loc2, loc3), ~ .x |> as.character() |> str_squish()),
-    `loc1.2` = if_else(is.na(loc2) | loc2 == "", loc1, paste0(loc1, ".", loc2)) |> str_squish(),
+    across(c(basin, loc1, loc2, loc3), ~ .x |> as.character() |> stringr::str_squish()),
+    `loc1.2` = if_else(is.na(loc2) | loc2 == "", loc1, paste0(loc1, ".", loc2)) |>
+      stringr::str_squish(),
     fxnGroup = case_when(
-      str_to_lower(fxnGroup) %in% c("scraper", "scrapers") ~ "scraper",
-      str_to_lower(fxnGroup) %in% c("excavator", "excavators") ~ "excavator",
-      TRUE ~ str_to_lower(fxnGroup)
+      stringr::str_to_lower(fxnGroup) %in% c("scraper", "scrapers")     ~ "scraper",
+      stringr::str_to_lower(fxnGroup) %in% c("excavator", "excavators") ~ "excavator",
+      TRUE ~ stringr::str_to_lower(fxnGroup)
     )
   )
 
@@ -1772,12 +1775,21 @@ parrotFXNData_clean <- parrotFXNData %>%
 comm_summary <- parrotCommunityData_clean %>%
   group_by(basin, loc1, loc2, `loc1.2`, loc3) %>%
   summarise(
+    # Density
     comm_density_mean = mean(density_ind_ha, na.rm = TRUE),
     comm_density_sd   = sd(density_ind_ha,   na.rm = TRUE),
     comm_density_n    = sum(!is.na(density_ind_ha)),
+
+    # Biomass
     comm_biomass_mean = mean(biomass_kg_ha,  na.rm = TRUE),
     comm_biomass_sd   = sd(biomass_kg_ha,    na.rm = TRUE),
     comm_biomass_n    = sum(!is.na(biomass_kg_ha)),
+
+    # Bioerosion (kg m-2 yr-1)
+    comm_bioerosion_mean = mean(bioerosion_kg_m2_yr1, na.rm = TRUE),
+    comm_bioerosion_sd   = sd(bioerosion_kg_m2_yr1,   na.rm = TRUE),
+    comm_bioerosion_n    = sum(!is.na(bioerosion_kg_m2_yr1)),
+
     .groups = "drop"
   )
 
@@ -1789,16 +1801,20 @@ fxn_summary <- parrotFXNData_clean %>%
     fxn_density_mean = mean(density_ind_ha, na.rm = TRUE),
     fxn_density_sd   = sd(density_ind_ha,   na.rm = TRUE),
     fxn_density_n    = sum(!is.na(density_ind_ha)),
+
     fxn_biomass_mean = mean(biomass_kg_ha,  na.rm = TRUE),
     fxn_biomass_sd   = sd(biomass_kg_ha,    na.rm = TRUE),
     fxn_biomass_n    = sum(!is.na(biomass_kg_ha)),
+
     .groups = "drop"
   ) %>%
-  pivot_wider(
+  tidyr::pivot_wider(
     names_from  = fxnGroup,
-    values_from = c(fxn_density_mean, fxn_density_sd, fxn_density_n,
-                    fxn_biomass_mean, fxn_biomass_sd, fxn_biomass_n),
-    names_sep   = "_"
+    values_from = c(
+      fxn_density_mean, fxn_density_sd, fxn_density_n,
+      fxn_biomass_mean, fxn_biomass_sd, fxn_biomass_n
+    ),
+    names_sep = "_"
   )
 
 # ---------- Merge & order columns ----------
@@ -1807,15 +1823,19 @@ parrot_loc3_summary <- comm_summary %>%
   arrange(basin, loc1, loc2, `loc1.2`, loc3) %>%
   select(
     basin, loc1, loc2, `loc1.2`, loc3,
+
     # Community
-    comm_density_mean, comm_density_sd, comm_density_n,
-    comm_biomass_mean, comm_biomass_sd, comm_biomass_n,
+    comm_density_mean,    comm_density_sd,    comm_density_n,
+    comm_biomass_mean,    comm_biomass_sd,    comm_biomass_n,
+    comm_bioerosion_mean, comm_bioerosion_sd, comm_bioerosion_n,
+
     # Excavators
     fxn_density_mean_excavator, fxn_density_sd_excavator, fxn_density_n_excavator,
     fxn_biomass_mean_excavator, fxn_biomass_sd_excavator, fxn_biomass_n_excavator,
+
     # Scrapers
-    fxn_density_mean_scraper, fxn_density_sd_scraper, fxn_density_n_scraper,
-    fxn_biomass_mean_scraper, fxn_biomass_sd_scraper, fxn_biomass_n_scraper
+    fxn_density_mean_scraper,   fxn_density_sd_scraper,   fxn_density_n_scraper,
+    fxn_biomass_mean_scraper,   fxn_biomass_sd_scraper,   fxn_biomass_n_scraper
   )
 
 # ---------- Consistency checks ----------
@@ -1837,66 +1857,74 @@ cat("Percent of sites where biomass matches: ", round(percent_biomass, 1), "%\n"
 cat("Percent of sites where density matches: ", round(percent_density, 1), "%\n")
 cat("Percent of sites where BOTH match:     ", round(percent_both, 1), "%\n")
 
-# ---------- Neat kable (Community/Excavators/Scrapers ABOVE Density/Biomass) ----------
+# ---------- Neat kable (Community/Excavators/Scrapers ABOVE Density/Biomass/Bioerosion) ----------
 display_tbl <- parrot_loc3_summary %>%
   mutate(
-    across(matches("(mean|sd)$"), ~ round(., 1)),
+    # Density & biomass → 1 decimal
+    across(matches("^(comm|fxn)_(density|biomass)_(mean|sd)$"), ~ round(., 1)),
+    # Bioerosion → 2 decimals
+    across(matches("^comm_bioerosion_(mean|sd)$"), ~ round(., 2)),
+    # N as integers
     across(ends_with("_n"), ~ as.integer(.))
   )
 
-align_vec <- c(rep("l", 5), rep("r", 18))
+# 5 ID cols + 21 numeric cols
+align_vec <- c(rep("l", 5), rep("r", 21))
 
-kbl(
+kableExtra::kbl(
   display_tbl,
   booktabs = TRUE,
   align = align_vec,
   col.names = c(
     "Basin","Loc1","Loc2","Loc1.2","Loc3",
     # Community
-    "Mean","SD","N", "Mean","SD","N",
+    "Mean","SD","N","Mean","SD","N","Mean","SD","N",
     # Excavators
-    "Mean","SD","N", "Mean","SD","N",
+    "Mean","SD","N","Mean","SD","N",
     # Scrapers
-    "Mean","SD","N", "Mean","SD","N"
+    "Mean","SD","N","Mean","SD","N"
   ),
   caption = "Parrot community & functional-group summary at loc3 (Mean, SD, N)."
 ) %>%
-  # Add the INNER row first (Density/Biomass), so the next call sits ABOVE it:
-  add_header_above(
+  kableExtra::add_header_above(
     c(" " = 5,
-      "Density" = 3, "Biomass" = 3,
+      "Density" = 3, "Biomass" = 3, "Bioerosion" = 3,
       "Density" = 3, "Biomass" = 3,
       "Density" = 3, "Biomass" = 3),
     bold = FALSE
   ) %>%
-  # Add the OUTER row second (Community / Excavators / Scrapers) so it appears ON TOP:
-  add_header_above(c(" " = 5, "Community" = 6, "Excavators" = 6, "Scrapers" = 6)) %>%
-  kable_styling(
+  kableExtra::add_header_above(
+    c(" " = 5, "Community" = 9, "Excavators" = 6, "Scrapers" = 6)
+  ) %>%
+  kableExtra::kable_styling(
     full_width = FALSE,
     position = "left",
     font_size = 11,
     bootstrap_options = c("striped","hover","condensed","responsive")
   ) %>%
-  scroll_box(width = "100%", height = "520px")
+  kableExtra::scroll_box(width = "100%", height = "520px")
 ```
 
 ### Unify parrot tables and calculate stats at loc2 level
 ```{r unifyParrotTablesLoc2, echo=FALSE}
+
 # ---------- Clean & standardize ----------
 parrotCommunityData_clean <- parrotCommunityData %>%
   mutate(
-    across(c(basin, loc1, loc2, loc3), ~ .x |> as.character() |> str_squish()),
-    `loc1.2` = if_else(is.na(loc2) | loc2 == "", loc1, paste0(loc1, ".", loc2)) |> str_squish()
+    across(c(basin, loc1, loc2, loc3), ~ .x |> as.character() |> stringr::str_squish()),
+    `loc1.2` = if_else(is.na(loc2) | loc2 == "", loc1, paste0(loc1, ".", loc2)) |>
+      stringr::str_squish()
   )
 
 parrotFXNData_clean <- parrotFXNData %>%
   mutate(
-    across(c(basin, loc1, loc2, loc3), ~ .x |> as.character() |> str_squish()),
-    `loc1.2` = if_else(is.na(loc2) | loc2 == "", loc1, paste0(loc1, ".", loc2)) |> str_squish(),
+    across(c(basin, loc1, loc2, loc3), ~ .x |> as.character() |> stringr::str_squish()),
+    `loc1.2` = if_else(is.na(loc2) | loc2 == "", loc1, paste0(loc1, ".", loc2)) |>
+      stringr::str_squish(),
     fxnGroup = case_when(
-      str_to_lower(fxnGroup) %in% c("scraper", "scrapers") ~ "scraper",
-      str_to_lower(fxnGroup) %in% c("excavator", "excavators") ~ "excavator",
-      TRUE ~ str_to_lower(fxnGroup)
+      stringr::str_to_lower(fxnGroup) %in% c("scraper", "scrapers")     ~ "scraper",
+      stringr::str_to_lower(fxnGroup) %in% c("excavator", "excavators") ~ "excavator",
+      TRUE ~ stringr::str_to_lower(fxnGroup)
     )
   )
 
@@ -1904,12 +1932,21 @@ parrotFXNData_clean <- parrotFXNData %>%
 comm_summary <- parrotCommunityData_clean %>%
   group_by(basin, loc1, loc2, `loc1.2`) %>%
   summarise(
+    # Density
     comm_density_mean = mean(density_ind_ha, na.rm = TRUE),
     comm_density_sd   = sd(density_ind_ha,   na.rm = TRUE),
     comm_density_n    = sum(!is.na(density_ind_ha)),
+
+    # Biomass
     comm_biomass_mean = mean(biomass_kg_ha,  na.rm = TRUE),
     comm_biomass_sd   = sd(biomass_kg_ha,    na.rm = TRUE),
     comm_biomass_n    = sum(!is.na(biomass_kg_ha)),
+
+    # Bioerosion (kg m-2 yr-1)  <-- NEW
+    comm_bioerosion_mean = mean(bioerosion_kg_m2_yr1, na.rm = TRUE),
+    comm_bioerosion_sd   = sd(bioerosion_kg_m2_yr1,   na.rm = TRUE),
+    comm_bioerosion_n    = sum(!is.na(bioerosion_kg_m2_yr1)),
+
     .groups = "drop"
   )
 
@@ -1921,16 +1958,20 @@ fxn_summary <- parrotFXNData_clean %>%
     fxn_density_mean = mean(density_ind_ha, na.rm = TRUE),
     fxn_density_sd   = sd(density_ind_ha,   na.rm = TRUE),
     fxn_density_n    = sum(!is.na(density_ind_ha)),
+
     fxn_biomass_mean = mean(biomass_kg_ha,  na.rm = TRUE),
     fxn_biomass_sd   = sd(biomass_kg_ha,    na.rm = TRUE),
     fxn_biomass_n    = sum(!is.na(biomass_kg_ha)),
+
     .groups = "drop"
   ) %>%
-  pivot_wider(
+  tidyr::pivot_wider(
     names_from  = fxnGroup,
-    values_from = c(fxn_density_mean, fxn_density_sd, fxn_density_n,
-                    fxn_biomass_mean, fxn_biomass_sd, fxn_biomass_n),
-    names_sep   = "_"
+    values_from = c(
+      fxn_density_mean, fxn_density_sd, fxn_density_n,
+      fxn_biomass_mean, fxn_biomass_sd, fxn_biomass_n
+    ),
+    names_sep = "_"
   )
 
 # ---------- Merge & order columns ----------
@@ -1939,15 +1980,19 @@ parrot_loc2_summary <- comm_summary %>%
   arrange(basin, loc1, loc2, `loc1.2`) %>%
   select(
     basin, loc1, loc2, `loc1.2`,
+
     # Community
-    comm_density_mean, comm_density_sd, comm_density_n,
-    comm_biomass_mean, comm_biomass_sd, comm_biomass_n,
+    comm_density_mean,    comm_density_sd,    comm_density_n,
+    comm_biomass_mean,    comm_biomass_sd,    comm_biomass_n,
+    comm_bioerosion_mean, comm_bioerosion_sd, comm_bioerosion_n,
+
     # Excavators
     fxn_density_mean_excavator, fxn_density_sd_excavator, fxn_density_n_excavator,
     fxn_biomass_mean_excavator, fxn_biomass_sd_excavator, fxn_biomass_n_excavator,
+
     # Scrapers
-    fxn_density_mean_scraper, fxn_density_sd_scraper, fxn_density_n_scraper,
-    fxn_biomass_mean_scraper, fxn_biomass_sd_scraper, fxn_biomass_n_scraper
+    fxn_density_mean_scraper,   fxn_density_sd_scraper,   fxn_density_n_scraper,
+    fxn_biomass_mean_scraper,   fxn_biomass_sd_scraper,   fxn_biomass_n_scraper
   )
 
 # ---------- Consistency checks ----------
@@ -1969,47 +2014,54 @@ cat("Percent of loc2 groups where biomass matches: ", round(percent_biomass, 1),
 cat("Percent of loc2 groups where density matches: ", round(percent_density, 1), "%\n")
 cat("Percent of loc2 groups where BOTH match:     ", round(percent_both, 1), "%\n")
 
-# ---------- Neat kable (Community/Excavators/Scrapers ABOVE Density/Biomass) ----------
+# ---------- Neat kable (Community/Excavators/Scrapers ABOVE Density/Biomass/Bioerosion) ----------
 display_tbl <- parrot_loc2_summary %>%
   mutate(
-    across(matches("(mean|sd)$"), ~ round(., 1)),
+    # Density & biomass → 1 decimal
+    across(matches("^(comm|fxn)_(density|biomass)_(mean|sd)$"), ~ round(., 1)),
+    # Bioerosion → 2 decimals
+    across(matches("^comm_bioerosion_(mean|sd)$"), ~ round(., 2)),
+    # N as integers
     across(ends_with("_n"), ~ as.integer(.))
   )
 
-align_vec <- c(rep("l", 4), rep("r", 18))
+# 4 ID cols + (Community 9) + (Excavators 6) + (Scrapers 6) = 25 total cols
+align_vec <- c(rep("l", 4), rep("r", 21))
 
-kbl(
+kableExtra::kbl(
   display_tbl,
   booktabs = TRUE,
   align = align_vec,
   col.names = c(
     "Basin","Loc1","Loc2","Loc1.2",
     # Community
-    "Mean","SD","N", "Mean","SD","N",
+    "Mean","SD","N","Mean","SD","N","Mean","SD","N",
     # Excavators
-    "Mean","SD","N", "Mean","SD","N",
+    "Mean","SD","N","Mean","SD","N",
     # Scrapers
-    "Mean","SD","N", "Mean","SD","N"
+    "Mean","SD","N","Mean","SD","N"
   ),
   caption = "Parrot community & functional-group summary at loc2 (Mean, SD, N)."
 ) %>%
-  # Inner row (Density/Biomass), so the next call sits above it:
-  add_header_above(
+  # Inner row (Density/Biomass/Bioerosion)
+  kableExtra::add_header_above(
     c(" " = 4,
-      "Density" = 3, "Biomass" = 3,
+      "Density" = 3, "Biomass" = 3, "Bioerosion" = 3,
       "Density" = 3, "Biomass" = 3,
       "Density" = 3, "Biomass" = 3),
     bold = FALSE
   ) %>%
-  # Outer row (Community / Excavators / Scrapers) on top:
-  add_header_above(c(" " = 4, "Community" = 6, "Excavators" = 6, "Scrapers" = 6)) %>%
-  kable_styling(
+  # Outer row (Community / Excavators / Scrapers)
+  kableExtra::add_header_above(
+    c(" " = 4, "Community" = 9, "Excavators" = 6, "Scrapers" = 6)
+  ) %>%
+  kableExtra::kable_styling(
     full_width = FALSE,
     position = "left",
     font_size = 11,
     bootstrap_options = c("striped","hover","condensed","responsive")
   ) %>%
-  scroll_box(width = "100%", height = "520px")
+  kableExtra::scroll_box(width = "100%", height = "520px")
 ```
 
 ## Environmental data
@@ -2903,145 +2955,8 @@ for (var in names(plot_specs)) {
 }
 ```
 
-```{r boxplots_by_loc2_panels, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
-library(dplyr)
-library(tidyr)
-library(ggplot2)
-library(patchwork)
-
-# ===== Metrics =====
-panel1_vars <- c(
-  "accretion_mm3cm2y",
-  "macroboring_mm3cm2y",
-  "grazing_mm3cm2y"
-)
-
-metric_labels <- c(
-  accretion_mm3cm2y   = "Accretion",
-  macroboring_mm3cm2y = "Macroboring",
-  grazing_mm3cm2y     = "Grazing"
-)
-
-volume_var <- "deltaVolume_mm3cm2y"
-
-# ===== GLOBAL SHARED Y LIMITS =====
-shared_ylim <- range(
-  c(
-    barData$accretion_mm3cm2y,
-    barData$macroboring_mm3cm2y,
-    barData$grazing_mm3cm2y,
-    barData[[volume_var]]
-  ),
-  na.rm = TRUE
-)
-
-# ===== Ensure output folder exists =====
-out_dir <- "regionPlots"
-if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
-
-# ===== Loop over islands =====
-for (this_loc2 in sort(unique(barData$loc2))) {
-
-  df_loc2 <- barData %>%
-    filter(loc2 == this_loc2)
-
-  if (nrow(df_loc2) == 0) next
-
-  # ---------- PANEL 1: Accretion / Macroboring / Grazing ----------
-  df_panel1 <- df_loc2 %>%
-    select(all_of(panel1_vars)) %>%
-    pivot_longer(
-      cols = everything(),
-      names_to = "metric",
-      values_to = "value"
-    ) %>%
-    filter(!is.na(value))
-
-  p1 <- ggplot(df_panel1, aes(x = metric, y = value)) +
-    geom_boxplot(
-      fill = "grey30",
-      color = "grey10",
-      outlier.alpha = 0.4,
-      linewidth = 0.6
-    ) +
-    geom_hline(
-      yintercept = 0,
-      linetype   = "dashed",
-      color      = "red",
-      linewidth  = 0.7
-    ) +
-    scale_x_discrete(labels = metric_labels) +
-    ylab(expression(Delta~volume~(mm^3~cm^{-2}~y^{-1}))) +
-    coord_cartesian(ylim = shared_ylim) +
-    theme_minimal(base_size = 30) +
-    theme(
-      axis.title.x      = element_blank(),
-      axis.text.x       = element_text(size = 27, angle = 45, hjust = 1),
-      axis.text.y       = element_text(size = 27),
-      axis.title.y      = element_text(size = 30),
-      panel.grid        = element_blank(),  # remove all gridlines
-      plot.margin       = margin(12, 12, 12, 12),
-      panel.border      = element_rect(color = "black", fill = NA, linewidth = 0.8),
-      panel.background  = element_rect(fill = "white", color = NA)
-    )
-
-  # ---------- PANEL 2: Volume ----------
-  p2 <- ggplot(df_loc2, aes(x = "Volume", y = .data[[volume_var]])) +
-    geom_boxplot(
-      fill = "grey90",
-      color = "grey10",
-      outlier.alpha = 0.4,
-      linewidth = 0.6
-    ) +
-    geom_hline(
-      yintercept = 0,
-      linetype   = "dashed",
-      color      = "red",
-      linewidth  = 0.7
-    ) +
-    xlab(NULL) +
-    ylab(NULL) +
-    coord_cartesian(ylim = shared_ylim) +
-    theme_minimal(base_size = 30) +
-    theme(
-      axis.text.x       = element_text(size = 27, angle = 45, hjust = 1),
-      axis.text.y       = element_blank(),
-      axis.ticks.y      = element_blank(),
-      axis.title.y      = element_blank(),
-      panel.grid        = element_blank(),  # remove all gridlines
-      plot.margin       = margin(12, 12, 12, 12),
-      panel.border      = element_rect(color = "black", fill = NA, linewidth = 0.8),
-      panel.background  = element_rect(fill = "white", color = NA)
-    )
-
-  # ---------- Combine for this island (3:1 widths) ----------
-  p_combined <- (p1 | p2) + plot_layout(widths = c(3, 1))
-
-  # Print to the document
-  cat("\n\n###", this_loc2, "\n\n")
-  print(p_combined)
-  cat("\n\n---\n")
-
-  # ---------- Save to PDF with 1.5:1 aspect ratio ----------
-  out_file <- file.path(out_dir, paste0("regionPlot_", this_loc2, ".pdf"))
-  ggsave(
-    filename = out_file,
-    plot     = p_combined,
-    width    = 6,   # any values with width/height = 1.5 are fine
-    height   = 6,
-    units    = "in",
-    device   = cairo_pdf
-  )
-}
-```
-
-
+## Vertical dotplots for map by loc1 and loc2
 ```{r dotplots_by_loc1_loc2_means, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
-library(dplyr)
-library(tidyr)
-library(ggplot2)
-library(stringr)
-
 # ===== Metrics =====
 panel1_vars <- c(
   "accretion_mm3cm2y",
@@ -3062,7 +2977,7 @@ metric_labels_full <- c(
   setNames("Total volume", volume_var)
 )
 
-# ===== GLOBAL SHARED X LIMITS (for horizontal plots) =====
+# ===== GLOBAL SHARED X LIMITS =====
 shared_xlim <- range(
   c(
     barData$accretion_mm3cm2y,
@@ -3073,16 +2988,15 @@ shared_xlim <- range(
   na.rm = TRUE
 )
 
-# ===== Harmonious, muted colors for metrics =====
+# ===== Metric colors =====
 metric_colors <- c(
-  "Accretion"    = "#2E8B57",  # sea-green
-  "Macroboring"  = "#E69F00",  # muted amber
-  "Grazing"      = "#C44E52",  # muted brick red
-  "Total volume" = "#222222"   # soft black
+  "Accretion"    = "#2E8B57",
+  "Macroboring"  = "#E69F00",
+  "Grazing"      = "#C44E52",
+  "Total volume" = "#222222"
 )
 
 # Vertical offsets within each loc2 row
-# Grazing (lowest) < Macroboring < Accretion < Total volume (highest)
 offset_map <- c(
   "Grazing"      = -0.15,
   "Macroboring"  = -0.05,
@@ -3090,44 +3004,47 @@ offset_map <- c(
   "Total volume" =  0.15
 )
 
-# ===== Ensure output folder exists =====
+# ===== Output folders =====
 out_dir <- "regionPlots_loc1_loc2"
 if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
 
+img_dir <- file.path(out_dir, "report_imgs")
+if (!dir.exists(img_dir)) dir.create(img_dir, recursive = TRUE)
+
 # Base width and height scaling
-base_width <- 7           # inches
-base_height_for_three <- 7  # 3 loc2 -> height 7 in
+base_width <- 7              # inches
+base_height_for_three <- 7   # 3 loc2 -> height 7 in
 
 # ===== Loop over loc1 regions =====
 for (this_loc1 in sort(unique(barData$loc1))) {
 
   df_loc1 <- barData %>%
-    filter(loc1 == this_loc1)
+    dplyr::filter(loc1 == this_loc1)
 
   if (nrow(df_loc1) == 0) next
 
   # ---------- Long format, then summarise to loc2-level mean + SD ----------
   df_long <- df_loc1 %>%
-    select(loc2, all_of(c(panel1_vars, volume_var))) %>%
-    pivot_longer(
+    dplyr::select(loc2, dplyr::all_of(c(panel1_vars, volume_var))) %>%
+    tidyr::pivot_longer(
       cols      = -loc2,
       names_to  = "metric",
       values_to = "value"
     ) %>%
-    group_by(loc2, metric) %>%
-    summarise(
+    dplyr::group_by(loc2, metric) %>%
+    dplyr::summarise(
       mean = mean(value, na.rm = TRUE),
       sd   = sd(value,   na.rm = TRUE),
       n    = sum(!is.na(value)),
       .groups = "drop"
     ) %>%
-    filter(!is.na(mean))
+    dplyr::filter(!is.na(mean))
 
   if (nrow(df_long) == 0) next
 
   # ---------- Metric labels & factor ordering ----------
   df_long <- df_long %>%
-    mutate(
+    dplyr::mutate(
       metric_label = metric_labels_full[metric],
       metric_label = factor(
         metric_label,
@@ -3176,14 +3093,14 @@ for (this_loc1 in sort(unique(barData$loc1))) {
   }
 
   df_long <- df_long %>%
-    mutate(
+    dplyr::mutate(
       loc2_factor = factor(loc2, levels = loc2_levels),
       y_base      = as.numeric(loc2_factor),
       y_pos       = y_base + offset_map[as.character(metric_label)],
-      sd          = ifelse(is.na(sd), 0, sd)   # single obs -> zero-width bar
+      sd          = ifelse(is.na(sd), 0, sd)
     )
 
-  # ---------- Pretty loc2 labels (capitalized) ----------
+  # ---------- Pretty loc2 labels ----------
   loc2_labels_pretty <- stringr::str_to_title(loc2_levels)
 
   # ---------- Pretty loc1 title using explicit mapping ----------
@@ -3200,85 +3117,80 @@ for (this_loc1 in sort(unique(barData$loc1))) {
     .default                   = this_loc1
   )
 
-  # ---------- Horizontal dot plot with error bars ----------
-  p_loc1 <- ggplot(
+  # ---------- Plot ----------
+  p_loc1 <- ggplot2::ggplot(
     df_long,
-    aes(x = mean, y = y_pos, color = metric_label)
+    ggplot2::aes(x = mean, y = y_pos, color = metric_label)
   ) +
-    geom_vline(
-      xintercept = 0,
-      linetype   = "dashed",
-      linewidth  = 0.7
+    ggplot2::geom_vline(xintercept = 0, linetype = "dashed", linewidth = 0.7) +
+    ggplot2::geom_errorbarh(
+      data = dplyr::filter(df_long, metric_label != "Total volume"),
+      ggplot2::aes(xmin = mean - sd, xmax = mean + sd, y = y_pos),
+      height = 0, linewidth = 0.8
     ) +
-    # Error bars WITHOUT caps (all except Total volume)
-    geom_errorbarh(
-      data = df_long %>% dplyr::filter(metric_label != "Total volume"),
-      aes(
-        xmin = mean - sd,
-        xmax = mean + sd,
-        y    = y_pos
-      ),
-      height    = 0,
-      linewidth = 0.8
+    ggplot2::geom_errorbarh(
+      data = dplyr::filter(df_long, metric_label == "Total volume"),
+      ggplot2::aes(xmin = mean - sd, xmax = mean + sd, y = y_pos),
+      height = 0.08, linewidth = 1.6
     ) +
-    # Error bars WITH caps (Total volume ONLY)
-    geom_errorbarh(
-      data = df_long %>% dplyr::filter(metric_label == "Total volume"),
-      aes(
-        xmin = mean - sd,
-        xmax = mean + sd,
-        y    = y_pos
-      ),
-      height    = 0.08,  # small caps only for Total volume
-      linewidth = 1.6
-    ) +
-    geom_point(
-      aes(
-        size = ifelse(metric_label == "Total volume", 5.5, 3.8)
-      ),
+    ggplot2::geom_point(
+      ggplot2::aes(size = ifelse(metric_label == "Total volume", 5.5, 3.8)),
       alpha = 0.9
     ) +
-    scale_color_manual(
-      name   = NULL,
-      values = metric_colors
-    ) +
-    scale_size_identity() +
-    coord_cartesian(xlim = shared_xlim) +
-    scale_y_continuous(
+    ggplot2::scale_color_manual(name = NULL, values = metric_colors) +
+    ggplot2::scale_size_identity() +
+    ggplot2::coord_cartesian(xlim = shared_xlim) +
+    ggplot2::scale_y_continuous(
       breaks = seq_along(loc2_levels),
-      labels = loc2_labels_pretty   # <- capitalized loc2 names
+      labels = loc2_labels_pretty
     ) +
-    xlab(expression(Delta~volume~(mm^3~cm^{-2}~y^{-1}))) +
-    ylab(NULL) +
-    ggtitle(loc1_pretty) +
-    theme_minimal(base_size = 28) +
-    theme(
-      axis.text.x      = element_text(size = 24),
-      axis.text.y      = element_text(size = 22),
-      axis.title.x     = element_text(size = 28),
-      axis.title.y     = element_blank(),
-      plot.title       = element_text(size = 30, face = "bold", hjust = 0.5),
-      panel.grid.major = element_blank(),
-      panel.grid.minor = element_blank(),
-      panel.border     = element_rect(color = "black", fill = NA, linewidth = 0.8),
-      panel.background = element_rect(fill = "white", color = NA),
+    ggplot2::xlab(expression(Delta~volume~(mm^3~cm^{-2}~y^{-1}))) +
+    ggplot2::ylab(NULL) +
+    ggplot2::ggtitle(loc1_pretty) +
+    ggplot2::theme_minimal(base_size = 28) +
+    ggplot2::theme(
+      axis.text.x      = ggplot2::element_text(size = 24),
+      axis.text.y      = ggplot2::element_text(size = 22),
+      axis.title.x     = ggplot2::element_text(size = 28),
+      axis.title.y     = ggplot2::element_blank(),
+      plot.title       = ggplot2::element_text(size = 30, face = "bold", hjust = 0.5),
+      panel.grid.major = ggplot2::element_blank(),
+      panel.grid.minor = ggplot2::element_blank(),
+      panel.border     = ggplot2::element_rect(color = "black", fill = NA, linewidth = 0.8),
+      panel.background = ggplot2::element_rect(fill = "white", color = NA),
       legend.position  = "none",
-      plot.margin      = margin(12, 12, 12, 12)
+      plot.margin      = ggplot2::margin(12, 12, 12, 12)
     )
 
-  # Print to the document
-  cat("\n\n###", loc1_pretty, "\n\n")
-  print(p_loc1)
-  cat("\n\n---\n")
-
   # ---------- Dynamic height based on number of loc2 ----------
-  n_loc2   <- length(loc2_levels)
-  out_hgt  <- base_height_for_three * (n_loc2 / 3)
+  n_loc2  <- length(loc2_levels)
+  out_hgt <- base_height_for_three * (n_loc2 / 3)
 
-  # ---------- Save to PDF ----------
-  out_file <- file.path(out_dir, paste0("regionPlot_loc1_", this_loc1, ".pdf"))
-  ggsave(
-    filename = out_file,
+  # Optional caps to prevent ridiculous tall/short figures
+  out_hgt <- max(out_hgt, 5)
+  out_hgt <- min(out_hgt, 16)
+
+  # ---------- Save PNG for report and include it (THIS is what makes heights vary) ----------
+  img_file <- file.path(img_dir, paste0("regionPlot_loc1_", this_loc1, ".png"))
+
+  ggplot2::ggsave(
+    filename = img_file,
+    plot     = p_loc1,
+    width    = base_width,
+    height   = out_hgt,
+    units    = "in",
+    dpi      = 200
+  )
+
+  # Include in knitted doc (width fixed; height varies via aspect ratio)
+  cat("\n\n")
+  cat(knitr::asis_output(paste0("![](", img_file, "){width=100%}\n\n")))
+  cat("\n\n")
+
+  # ---------- Save to PDF (your original artifact) ----------
+  out_pdf <- file.path(out_dir, paste0("regionPlot_loc1_", this_loc1, ".pdf"))
+  ggplot2::ggsave(
+    filename = out_pdf,
     plot     = p_loc1,
     width    = base_width,
     height   = out_hgt,
@@ -3287,7 +3199,6 @@ for (this_loc1 in sort(unique(barData$loc1))) {
   )
 }
 ```
-
 
 # Exploration of grazing as a driver
 ## BAR data vs. Grazing
@@ -3435,7 +3346,8 @@ accretionVsGrazingPlot; accretionVsGrazingLoc2Plot; accretionVsGrazingLoc3Plot
 
 # Exploration of parrotfish as a driver
 ## Parrotfish Loc2 as driver
-```{r, createParrotDriverPlotsLoc2, fig.width=12, fig.height=18, out.width="100%", echo=FALSE}
+```{r createParrotDriverPlotsLoc2, fig.width=12, fig.height=18, out.width="100%", echo=FALSE}
+
 # List of response variables
 responses <- c(
   "meanDeltaMass",
@@ -3448,7 +3360,42 @@ responses <- c(
 
 # Helper: make row title
 row_title <- function(txt) {
-  ggdraw() + draw_label(txt, fontface = "bold", size = 12, x = 0.5, hjust = 0.5)
+  cowplot::ggdraw() + cowplot::draw_label(txt, fontface = "bold", size = 12, x = 0.5, hjust = 0.5)
+}
+
+# Helper: placeholder plot if data/cols missing
+placeholder_plot <- function(msg = "No data") {
+  ggplot2::ggplot() +
+    ggplot2::theme_void() +
+    ggplot2::annotate("text", x = 0, y = 0, label = msg, fontface = "bold") +
+    ggplot2::xlim(-1, 1) + ggplot2::ylim(-1, 1)
+}
+
+# Helper: safe plotting wrapper (prevents missing columns / all-NA vectors from breaking)
+safe_plot_loc2 <- function(dat, x, y, sd_x, sd_y, xlab, ylab = NULL, group = "basin", no_data_msg = NULL) {
+
+  # column existence checks
+  needed <- c(x, y, sd_x, sd_y, group)
+  missing_cols <- needed[!needed %in% names(dat)]
+  if (length(missing_cols) > 0) {
+    return(placeholder_plot(paste0("Missing: ", paste(missing_cols, collapse = ", "))))
+  }
+
+  # if there are no finite x/y values, don't call the plotter
+  ok <- is.finite(dat[[x]]) & is.finite(dat[[y]])
+  if (!any(ok, na.rm = TRUE)) {
+    return(placeholder_plot(ifelse(is.null(no_data_msg), "No data", no_data_msg)))
+  }
+
+  # call your existing plotting function
+  plot_loc2_lm_full_atl_pac(
+    dat,
+    x = x, y = y,
+    sd_x = sd_x, sd_y = sd_y,
+    xlab = xlab,
+    ylab = ylab,
+    group = group
+  )
 }
 
 # Loop through each response and make plots
@@ -3456,11 +3403,11 @@ plot_list <- list()
 
 for (resp in responses) {
 
-  # Y-axis label (Δ response)
-  ylab_expr <- bquote(Delta~.(gsub("meanDelta", "", resp))~(units))
+  # NOTE: you're not using ylab_expr below, leaving as-is
+  # ylab_expr <- bquote(Delta~.(gsub("meanDelta", "", resp))~(units))
 
-  # Build plots for community, excavator, scraper — biomass & density
-  comm_biomass <- plot_loc2_lm_full_atl_pac(
+  # Build plots for community — biomass, density, and bioerosion
+  comm_biomass <- safe_plot_loc2(
     barParrotStatsLoc2,
     x = "comm_biomass_mean", y = resp,
     sd_x = "comm_biomass_sd", sd_y = paste0("se", sub("mean", "", resp)),
@@ -3468,7 +3415,7 @@ for (resp in responses) {
     ylab = NULL, group = "basin"
   )
 
-  comm_density <- plot_loc2_lm_full_atl_pac(
+  comm_density <- safe_plot_loc2(
     barParrotStatsLoc2,
     x = "comm_density_mean", y = resp,
     sd_x = "comm_density_sd", sd_y = paste0("se", sub("mean", "", resp)),
@@ -3476,7 +3423,19 @@ for (resp in responses) {
     ylab = NULL, group = "basin"
   )
 
-  excavator_biomass <- plot_loc2_lm_full_atl_pac(
+  # Bioerosion: only exists for Atlantic in your data.
+  # Filter to rows where bioerosion is present (prevents Pacific all-NA from causing issues).
+  comm_bioerosion <- safe_plot_loc2(
+    dplyr::filter(barParrotStatsLoc2, !is.na(comm_bioerosion_mean)),
+    x = "comm_bioerosion_mean", y = resp,
+    sd_x = "comm_bioerosion_sd", sd_y = paste0("se", sub("mean", "", resp)),
+    xlab = expression(Parrot~bioerosion~(kg~m^-2~yr^-1)),
+    ylab = NULL, group = "basin",
+    no_data_msg = "No bioerosion data"
+  )
+
+  # Excavators — biomass & density
+  excavator_biomass <- safe_plot_loc2(
     barParrotStatsLoc2,
     x = "fxn_biomass_mean_excavator", y = resp,
     sd_x = "fxn_biomass_sd_excavator", sd_y = paste0("se", sub("mean", "", resp)),
@@ -3484,7 +3443,7 @@ for (resp in responses) {
     ylab = NULL, group = "basin"
   )
 
-  excavator_density <- plot_loc2_lm_full_atl_pac(
+  excavator_density <- safe_plot_loc2(
     barParrotStatsLoc2,
     x = "fxn_density_mean_excavator", y = resp,
     sd_x = "fxn_density_sd_excavator", sd_y = paste0("se", sub("mean", "", resp)),
@@ -3492,7 +3451,8 @@ for (resp in responses) {
     ylab = NULL, group = "basin"
   )
 
-  scraper_biomass <- plot_loc2_lm_full_atl_pac(
+  # Scrapers — biomass & density
+  scraper_biomass <- safe_plot_loc2(
     barParrotStatsLoc2,
     x = "fxn_biomass_mean_scraper", y = resp,
     sd_x = "fxn_biomass_sd_scraper", sd_y = paste0("se", sub("mean", "", resp)),
@@ -3500,7 +3460,7 @@ for (resp in responses) {
     ylab = NULL, group = "basin"
   )
 
-  scraper_density <- plot_loc2_lm_full_atl_pac(
+  scraper_density <- safe_plot_loc2(
     barParrotStatsLoc2,
     x = "fxn_density_mean_scraper", y = resp,
     sd_x = "fxn_density_sd_scraper", sd_y = paste0("se", sub("mean", "", resp)),
@@ -3508,41 +3468,52 @@ for (resp in responses) {
     ylab = NULL, group = "basin"
   )
 
-  # Build 3x2 grid
-  grid <- plot_grid(
-    plot_grid(row_title("Community"),
-              plot_grid(comm_biomass, comm_density, ncol = 2),
-              ncol = 1, rel_heights = c(0.1, 1)),
-    plot_grid(row_title("Excavator"),
-              plot_grid(excavator_biomass, excavator_density, ncol = 2),
-              ncol = 1, rel_heights = c(0.1, 1)),
-    plot_grid(row_title("Scraper"),
-              plot_grid(scraper_biomass, scraper_density, ncol = 2),
-              ncol = 1, rel_heights = c(0.1, 1)),
+  # Build grid:
+  # - Community now is 3 columns (biomass, density, bioerosion)
+  # - Excavator & Scraper remain 2 columns (biomass, density)
+  grid <- cowplot::plot_grid(
+    cowplot::plot_grid(
+      row_title("Community"),
+      cowplot::plot_grid(comm_biomass, comm_density, comm_bioerosion, ncol = 3),
+      ncol = 1, rel_heights = c(0.1, 1)
+    ),
+    cowplot::plot_grid(
+      row_title("Excavator"),
+      cowplot::plot_grid(excavator_biomass, excavator_density, ncol = 2),
+      ncol = 1, rel_heights = c(0.1, 1)
+    ),
+    cowplot::plot_grid(
+      row_title("Scraper"),
+      cowplot::plot_grid(scraper_biomass, scraper_density, ncol = 2),
+      ncol = 1, rel_heights = c(0.1, 1)
+    ),
     ncol = 1
   )
 
   # Add title to whole grid
-  grid_title <- ggdraw() +
-    draw_label(paste("Δ Response:", gsub("meanDelta", "Δ ", resp)),
-               fontface = "bold", size = 14)
+  grid_title <- cowplot::ggdraw() +
+    cowplot::draw_label(
+      paste("Δ Response:", gsub("meanDelta", "Δ ", resp)),
+      fontface = "bold", size = 14
+    )
 
-  final_grid <- plot_grid(grid_title, grid, ncol = 1, rel_heights = c(0.1, 1))
+  final_grid <- cowplot::plot_grid(grid_title, grid, ncol = 1, rel_heights = c(0.1, 1))
 
   plot_list[[resp]] <- final_grid
 }
 
-# Display one (for example, ΔMass)
-plot_list["meanDeltaMass"]
-plot_list["meanDeltaVolume"]
-plot_list["meanDeltaDensity"]
-plot_list["meanMacroboring"]
-plot_list["meanGrazing"]
-plot_list["meanAccretion"]
+# Display
+plot_list[["meanDeltaMass"]]
+plot_list[["meanDeltaVolume"]]
+plot_list[["meanDeltaDensity"]]
+plot_list[["meanMacroboring"]]
+plot_list[["meanGrazing"]]
+plot_list[["meanAccretion"]]
 ```
 
 ## Parrotfish Loc3 as driver of Loc3 averages
-```{r, createParrotDriverPlotsLoc3, fig.width=12, fig.height=18, out.width="100%", echo=FALSE}
+```{r createParrotDriverPlotsLoc3, fig.width=12, fig.height=18, out.width="100%", echo=FALSE}
+
 # List of response variables
 responses <- c(
   "meanDeltaMass",
@@ -3555,7 +3526,39 @@ responses <- c(
 
 # Helper: make row title
 row_title <- function(txt) {
-  ggdraw() + draw_label(txt, fontface = "bold", size = 12, x = 0.5, hjust = 0.5)
+  cowplot::ggdraw() + cowplot::draw_label(txt, fontface = "bold", size = 12, x = 0.5, hjust = 0.5)
+}
+
+# Helper: placeholder plot if data/cols missing
+placeholder_plot <- function(msg = "No data") {
+  ggplot2::ggplot() +
+    ggplot2::theme_void() +
+    ggplot2::annotate("text", x = 0, y = 0, label = msg, fontface = "bold") +
+    ggplot2::xlim(-1, 1) + ggplot2::ylim(-1, 1)
+}
+
+# Helper: safe plotting wrapper (prevents missing columns / all-NA vectors from breaking)
+safe_plot_loc3 <- function(dat, x, y, sd_x, sd_y, xlab, ylab = NULL, group = "basin", no_data_msg = NULL) {
+
+  needed <- c(x, y, sd_x, sd_y, group)
+  missing_cols <- needed[!needed %in% names(dat)]
+  if (length(missing_cols) > 0) {
+    return(placeholder_plot(paste0("Missing: ", paste(missing_cols, collapse = ", "))))
+  }
+
+  ok <- is.finite(dat[[x]]) & is.finite(dat[[y]])
+  if (!any(ok, na.rm = TRUE)) {
+    return(placeholder_plot(ifelse(is.null(no_data_msg), "No data", no_data_msg)))
+  }
+
+  plot_loc3_lm_full_atl_pac(
+    dat,
+    x = x, y = y,
+    sd_x = sd_x, sd_y = sd_y,
+    xlab = xlab,
+    ylab = ylab,
+    group = group
+  )
 }
 
 # Loop through each response and make plots
@@ -3563,11 +3566,11 @@ plot_list <- list()
 
 for (resp in responses) {
 
-  # Y-axis label (Δ response)
+  # Y-axis label (Δ response) (not used below, leaving intact)
   ylab_expr <- bquote(Delta~.(gsub("meanDelta", "", resp))~(units))
 
-  # Build plots for community, excavator, scraper — biomass & density
-  comm_biomass <- plot_loc3_lm_full_atl_pac(
+  # Community — biomass, density, bioerosion
+  comm_biomass <- safe_plot_loc3(
     barParrotStatsLoc3,
     x = "comm_biomass_mean", y = resp,
     sd_x = "comm_biomass_sd", sd_y = paste0("se", sub("mean", "", resp)),
@@ -3575,7 +3578,7 @@ for (resp in responses) {
     ylab = NULL, group = "basin"
   )
 
-  comm_density <- plot_loc3_lm_full_atl_pac(
+  comm_density <- safe_plot_loc3(
     barParrotStatsLoc3,
     x = "comm_density_mean", y = resp,
     sd_x = "comm_density_sd", sd_y = paste0("se", sub("mean", "", resp)),
@@ -3583,7 +3586,18 @@ for (resp in responses) {
     ylab = NULL, group = "basin"
   )
 
-  excavator_biomass <- plot_loc3_lm_full_atl_pac(
+  # Bioerosion exists only for Atlantic (and may be all NA for Pacific) — filter to present rows
+  comm_bioerosion <- safe_plot_loc3(
+    dplyr::filter(barParrotStatsLoc3, !is.na(comm_bioerosion_mean)),
+    x = "comm_bioerosion_mean", y = resp,
+    sd_x = "comm_bioerosion_sd", sd_y = paste0("se", sub("mean", "", resp)),
+    xlab = expression(Parrot~bioerosion~(kg~m^-2~yr^-1)),
+    ylab = NULL, group = "basin",
+    no_data_msg = "No bioerosion data"
+  )
+
+  # Excavators — biomass & density
+  excavator_biomass <- safe_plot_loc3(
     barParrotStatsLoc3,
     x = "fxn_biomass_mean_excavator", y = resp,
     sd_x = "fxn_biomass_sd_excavator", sd_y = paste0("se", sub("mean", "", resp)),
@@ -3591,7 +3605,7 @@ for (resp in responses) {
     ylab = NULL, group = "basin"
   )
 
-  excavator_density <- plot_loc3_lm_full_atl_pac(
+  excavator_density <- safe_plot_loc3(
     barParrotStatsLoc3,
     x = "fxn_density_mean_excavator", y = resp,
     sd_x = "fxn_density_sd_excavator", sd_y = paste0("se", sub("mean", "", resp)),
@@ -3599,7 +3613,8 @@ for (resp in responses) {
     ylab = NULL, group = "basin"
   )
 
-  scraper_biomass <- plot_loc3_lm_full_atl_pac(
+  # Scrapers — biomass & density
+  scraper_biomass <- safe_plot_loc3(
     barParrotStatsLoc3,
     x = "fxn_biomass_mean_scraper", y = resp,
     sd_x = "fxn_biomass_sd_scraper", sd_y = paste0("se", sub("mean", "", resp)),
@@ -3607,7 +3622,7 @@ for (resp in responses) {
     ylab = NULL, group = "basin"
   )
 
-  scraper_density <- plot_loc3_lm_full_atl_pac(
+  scraper_density <- safe_plot_loc3(
     barParrotStatsLoc3,
     x = "fxn_density_mean_scraper", y = resp,
     sd_x = "fxn_density_sd_scraper", sd_y = paste0("se", sub("mean", "", resp)),
@@ -3615,37 +3630,47 @@ for (resp in responses) {
     ylab = NULL, group = "basin"
   )
 
-  # Build 3x2 grid
-  grid <- plot_grid(
-    plot_grid(row_title("Community"),
-              plot_grid(comm_biomass, comm_density, ncol = 2),
-              ncol = 1, rel_heights = c(0.1, 1)),
-    plot_grid(row_title("Excavator"),
-              plot_grid(excavator_biomass, excavator_density, ncol = 2),
-              ncol = 1, rel_heights = c(0.1, 1)),
-    plot_grid(row_title("Scraper"),
-              plot_grid(scraper_biomass, scraper_density, ncol = 2),
-              ncol = 1, rel_heights = c(0.1, 1)),
+  # Build grid:
+  # - Community now 3 columns (biomass, density, bioerosion)
+  # - Excavator & Scraper remain 2 columns
+  grid <- cowplot::plot_grid(
+    cowplot::plot_grid(
+      row_title("Community"),
+      cowplot::plot_grid(comm_biomass, comm_density, comm_bioerosion, ncol = 3),
+      ncol = 1, rel_heights = c(0.1, 1)
+    ),
+    cowplot::plot_grid(
+      row_title("Excavator"),
+      cowplot::plot_grid(excavator_biomass, excavator_density, ncol = 2),
+      ncol = 1, rel_heights = c(0.1, 1)
+    ),
+    cowplot::plot_grid(
+      row_title("Scraper"),
+      cowplot::plot_grid(scraper_biomass, scraper_density, ncol = 2),
+      ncol = 1, rel_heights = c(0.1, 1)
+    ),
     ncol = 1
   )
 
   # Add title to whole grid
-  grid_title <- ggdraw() +
-    draw_label(paste("Δ Response:", gsub("meanDelta", "Δ ", resp)),
-               fontface = "bold", size = 14)
+  grid_title <- cowplot::ggdraw() +
+    cowplot::draw_label(
+      paste("Δ Response:", gsub("meanDelta", "Δ ", resp)),
+      fontface = "bold", size = 14
+    )
 
-  final_grid <- plot_grid(grid_title, grid, ncol = 1, rel_heights = c(0.1, 1))
+  final_grid <- cowplot::plot_grid(grid_title, grid, ncol = 1, rel_heights = c(0.1, 1))
 
   plot_list[[resp]] <- final_grid
 }
 
 # Display plots
-plot_list["meanDeltaMass"]
-plot_list["meanDeltaVolume"]
-plot_list["meanDeltaDensity"]
-plot_list["meanMacroboring"]
-plot_list["meanGrazing"]
-plot_list["meanAccretion"]
+plot_list[["meanDeltaMass"]]
+plot_list[["meanDeltaVolume"]]
+plot_list[["meanDeltaDensity"]]
+plot_list[["meanMacroboring"]]
+plot_list[["meanGrazing"]]
+plot_list[["meanAccretion"]]
 ```
 
 ## Parrotfish Loc3 as driver of BAR point data
@@ -5244,18 +5269,7 @@ print(plot_pop5)
 ```
 
 ### Human pressure all points
-```{r, humanImpactGraphsAllPoints, fig.width=12, fig.height=18, out.width="100%", echo=FALSE}
-# ====== 0) Packages ======
-suppressPackageStartupMessages({
-  library(dplyr)
-  library(tidyr)
-  library(ggplot2)
-  library(rlang)
-  library(tibble)
-  library(stringr)
-  library(patchwork)  # for arranging metric panels
-})
-
+```{r, humanImpactGraphsAllPoints, fig.width=18, fig.height=12, out.width="100%", echo=FALSE}
 # ====== 1) Join barData to human stats at loc3, ensure loc1.2 & basin ======
 pop_cols <- c("population_5km_2005","population_10km_2005",
               "population_50km_2005","population_100km_2005")
@@ -5590,14 +5604,13 @@ if (!is.null(plot_pop100)) print(plot_pop100) else message("population_100km_200
 ```
 
 ### Human pressure as gravity index
-```{r gravityIndex, fig.width=12, fig.height=18, out.width="100%", echo=FALSE}
-
+#```{r gravityIndex, fig.width=12, fig.height=18, out.width="100%", echo=FALSE}
 # 1) Read gravity index (just loc3 + totalGravity)
 grav_path   <- file.path(data_dir, "BMU_gravityIndex.csv")
 gravityData <- readr::read_csv(grav_path, show_col_types = FALSE) %>%
   dplyr::select(loc3, totalGravity)
 
-# 2) Make sure barData has clean 'basin' and 'loc1.2' columns
+# 2) Ensure clean 'basin' and 'loc1.2'
 if (!"basin" %in% names(barData)) {
   if ("basin.x" %in% names(barData)) {
     barData <- barData %>% dplyr::rename(basin = basin.x)
@@ -5614,20 +5627,20 @@ if (!"loc1.2" %in% names(barData)) {
   }
 }
 
-# 3) Add totalGravity to *each row* of barData via loc3
+# 3) Join raw gravity to barData
 barData <- barData %>%
   dplyr::left_join(gravityData, by = "loc3")
 
-# 4) Response variables + pretty labels (same style as your barData code)
+# 4) Response variables + labels
 responses <- c(
-  accretion_mm3cm2y      = "accretion",
-  grazing_mm3cm2y        = "grazing",
-  macroboring_mm3cm2y    = "macroboring",
-  deltaMass_mgcm2y       = "mass",
-  deltaVolume_mm3cm2y    = "volume"
+  accretion_mm3cm2y   = "accretion",
+  grazing_mm3cm2y     = "grazing",
+  macroboring_mm3cm2y = "macroboring",
+  deltaMass_mgcm2y    = "mass",
+  deltaVolume_mm3cm2y = "volume"
 )
 
-# 5) Build a long data frame JUST for gravity analysis
+# 5) Long-format data for gravity analysis
 gravity_long <- barData %>%
   dplyr::select(
     loc3, `loc1.2`, basin,
@@ -5640,14 +5653,14 @@ gravity_long <- barData %>%
     values_to = "response_value"
   ) %>%
   dplyr::mutate(
-    metric = dplyr::recode(response_col, !!!setNames(unname(responses), names(responses))),
-    response_value = suppressWarnings(as.numeric(response_value)),
-    metric         = factor(metric, levels = unname(responses)),
-    totalGravity   = suppressWarnings(as.numeric(totalGravity)),
-    basin          = tolower(as.character(basin))
+    metric         = dplyr::recode(response_col, !!!responses),
+    response_value = as.numeric(response_value),
+    totalGravity   = as.numeric(totalGravity),
+    basin          = tolower(as.character(basin)),
+    metric         = factor(metric, levels = unname(responses))
   )
 
-# ---- 6) Plot with raw gravity ----
+# 6) Plot with raw gravity
 plot_gravity <- gravity_long %>%
   plot_response_vs_x_basin(
     xvar       = "totalGravity",
@@ -5656,37 +5669,10 @@ plot_gravity <- gravity_long %>%
   )
 
 print(plot_gravity)
-
-# ---- 7) Plot with log-transformed gravity (log10) ----
-gravity_long_log <- gravity_long %>%
-  dplyr::mutate(
-    log_totalGravity = dplyr::if_else(
-      totalGravity > 0,
-      log10(totalGravity),
-      NA_real_
-    )
-  )
-
-plot_gravity_log <- gravity_long_log %>%
-  plot_response_vs_x_basin(
-    xvar       = "log_totalGravity",
-    x_label    = "log10(Total gravity)",
-    title_text = "log10(Total Gravity) vs. Bar Responses (All / Atlantic / Pacific fits)"
-  )
-
-print(plot_gravity_log)
-```
-
-
-
-
-
-
-
-
+#```
 
 ### stats analysis
-```{r additionalstats, fig.width=12, fig.height=18, out.width="100%", echo=FALSE}
+```{r additionalstats, fig.width=18, fig.height=12, out.width="100%", echo=FALSE}
 ## =========================
 ## 0) Packages
 ## =========================
@@ -5784,16 +5770,6 @@ ggplot(df2, aes(
     title = "Weighted accretion–Ωarag regression at the loc2 level"
   )
 ```
-
-
-
-
-
-
-
-
-
-
 
 # Abstract
 
