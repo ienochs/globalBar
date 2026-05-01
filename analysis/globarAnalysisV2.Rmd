@@ -1,0 +1,2626 @@
+---
+title: "globarAnalysisV2"
+author: "ian enochs"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 3
+    number_sections: yes
+    toc_float:
+      collapsed: yes
+      smooth_scroll: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE)
+```
+
+This document was created to analyze NCRMP BMU data
+
+# Load and clean data
+### Load Packages
+```{r loadPackages, echo=FALSE}
+# Core data stack
+library(tidyverse)   # dplyr, ggplot2, tidyr, readr, purrr, tibble, stringr, forcats, magrittr
+library(lubridate)
+library(readxl)
+library(jsonlite)
+library(curl)
+library(readr)
+
+# Spatial
+library(sf)          # vector
+library(terra)       # raster/terra
+library(units)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(leaflet)
+library(mapview)
+
+# Viz helpers & layout
+library(ggrepel)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+
+# Stats / ecology
+library(vegan)
+library(cluster)
+library(lme4)
+library(lmerTest)
+library(emmeans)
+library(dplyr)
+library(tidyr)
+library(broom)
+
+# Reporting
+library(knitr)
+library(kableExtra)
+library(rmarkdown)
+```
+
+### Set aesthetics
+```{r setAesthetics, echo=FALSE}
+# Create color scale for loc1.2 categories
+loc_colors <- c(
+  # Caribbean
+    "caribbean.puertoRico"   = "#FFD34D",
+    "caribbean.saintCroix"   = "#FF9B00",
+    "caribbean.saintJohn"    = "#FF6B00",
+    "caribbean.saintThomas"  = "#CC4E00",
+  # Florida
+    "florida.keys"           = "#660000",
+    "florida.dryTortugas"    = "#E04B3B",
+  # Flower Garden Banks 
+    "flowerGardenBanks.flowerGardenBanks" = "#7B4F1D",
+  # Marianas
+    "marianas.guam"   = "#C51B7D",
+    "marianas.maug"   = "#882E72",
+    "marianas.pagan"  = "#5E4FA2",
+    "marianas.saipan" = "#2A1E5C",
+  # Middle Hawaiian Islands
+    "middleHawaiianIslands.hawaii" = "#005B5A",
+    "middleHawaiianIslands.oahu"   = "#4ED1C5",
+  # Northwest Hawaiian Islands
+    "northwestHawaiianIslands.frenchFrigateShoals" = "#004B9A",
+    "northwestHawaiianIslands.pearlHermes"         = "#6FB6FF",
+  # Pacific Remote Island Area
+    "pacificRemoteIslandArea.jarvis"  = "#003B1A",
+    "pacificRemoteIslandArea.palmyra" = "#1E8E3E",
+    "pacificRemoteIslandArea.wake"    = "#7BC96F",
+  # Samoa
+    "samoa.ofu"     = "#1C1C1C",
+    "samoa.tau"     = "#7A7A7A",
+    "samoa.tutuila" = "#C8C8C8"
+)
+```
+
+### Define data import paths
+```{r dataImportPaths, echo=FALSE}
+#Set root folder and working directories
+rootFolder <- file.path("C:/Users/ian.enochs/Documents/GitHub/globalBar/analysis")  # Attempt Ian's working directory first
+if (!dir.exists(rootFolder)) {                                                      # If Ian's path does not exist, use John's path instead
+  rootFolder <- file.path("/Users/john.morris/Documents/GitHub/globalBar/analysis")
+}
+setwd(rootFolder)
+
+#Bar directory and paths
+data_dir   <- file.path(rootFolder, "data")
+atl_path   <- file.path(data_dir, "NCRMP_Atlantic_allBmuData.xlsx")
+pac_path   <- file.path(data_dir, "NCRMP_Pacific_allBmuData.xlsx")
+dec2025Update_path   <- file.path(data_dir, "Pac_Atl_NCRMP_2024_updateDec2025.xlsx") #dec2025 update path
+
+#Parrotfish directory and paths
+p_dir <- file.path(rootFolder, "data", "parrotfish")
+parrot_path <- file.path(p_dir, "BMU_Parrotfish_AnalysisReady.csv")
+
+#Environmental directory and path
+e_dir <- file.path(rootFolder, "data", "environmental")
+env_path <- file.path(e_dir, "eds_time.csv")
+```
+
+### Create functions for importing data
+```{r dataImportFunctions, echo=FALSE}
+#Function to remove rows if all cells are NA
+drop_all_na_rows <- function(df) {
+  df %>%
+    dplyr::mutate(dplyr::across(dplyr::where(is.character), ~ dplyr::na_if(trimws(.), ""))) %>%
+    dplyr::filter(!dplyr::if_all(dplyr::everything(), ~ is.na(.)))
+}
+
+#Function to assign basins based on regions
+to_basin <- function(region) dplyr::case_when(
+  region %in% c("DRTO","FGB","FLK","PR","STJ","STT","STX") ~ "atlantic",
+  region %in% c("MARIAN","MHI","NWHI","PRIA","SAMOA")      ~ "pacific",
+  TRUE ~ NA_character_
+)
+
+#Function to assign loc1 based on region
+to_loc1 <- function(region) dplyr::case_when(
+  region %in% c("DRTO","FLK")           ~ "florida",
+  region == "FGB"                       ~ "flowerGardenBanks",
+  region %in% c("PR","STJ","STT","STX") ~ "caribbean",
+  region == "MARIAN"                    ~ "marianas",
+  region == "MHI"                       ~ "middleHawaiianIslands",
+  region == "NWHI"                      ~ "northwestHawaiianIslands",
+  region == "PRIA"                      ~ "pacificRemoteIslandArea",
+  region == "SAMOA"                     ~ "samoa",
+  TRUE ~ NA_character_
+)
+
+#Function to assign loc2 based on region and subregion
+to_loc2 <- function(region, subRegion) dplyr::case_when(
+  region == "DRTO" ~ "dryTortugas",
+  region == "FGB"  ~ "flowerGardenBanks",
+  region == "FLK"  ~ "keys",
+  region == "PR"   ~ "puertoRico",
+  region == "STJ"  ~ "saintJohn",
+  region == "STT"  ~ "saintThomas",
+  region == "STX"  ~ "saintCroix",
+  subRegion == "OFU" ~ "ofu",
+  subRegion == "PAL" ~ "palmyra",
+  subRegion == "TAU" ~ "tau",
+  subRegion == "TUT" ~ "tutuila",
+  subRegion == "WAK" ~ "wake",
+  subRegion == "JAR" ~ "jarvis",
+  subRegion == "HAW" ~ "hawaii",
+  subRegion == "OAH" ~ "oahu",
+  subRegion == "FFS" ~ "frenchFrigateShoals",
+  subRegion == "PHR" ~ "pearlHermes",
+  subRegion == "GUA" ~ "guam",
+  subRegion == "SAI" ~ "saipan",
+  subRegion == "PAG" ~ "pagan",
+  subRegion == "MAU" ~ "maug",
+  TRUE ~ NA_character_
+)
+
+#FUNCTIONS TO ASSIGN LOC3
+#Shared helpers
+safe_concat <- function(l2, subR) {
+  s <- ifelse(is.na(subR) | trimws(subR) == "", NA, subR)
+  ifelse(is.na(s), l2, paste(l2, s, sep = "-"))
+}
+first3_letters_lower <- function(x) {
+  tolower(substr(gsub("\\s+", "", x), 1, 3))
+}
+normalize_site <- function(siteName) {
+  ifelse(is.na(siteName), "", gsub("_", "-", siteName, fixed = TRUE))
+}
+
+#Pacific site name map
+  pac_dir_map <- c(
+    # Tutuila
+    "OCC-TUT-002"="north","OCC-TUT-007"="east","OCC-TUT-017"="south","OCC-TUT-022"="west",
+    # Ofu
+    "OCC-OFU-002"="north","OCC-OFU-009"="south",
+    # Tau
+    "OCC-TAU-002"="north","OCC-TAU-011"="west",
+    # Jarvis
+    "OCC-JAR-003"="east","OCC-JAR-008"="south","OCC-JAR-013"="west",
+    # Palmyra
+    "OCC-PAL-003"="north","OCC-PAL-008"="east","OCC-PAL-017"="west",
+    # Hawaii
+    "OCC-HAW-014"="north","OCC-HAW-002"="north","OCC-HAW-006"="east","OCC-HAW-066"="east","OCC-HAW-008"="south","OCC-HAW-010"="west",#note east is listed as 066 in parrotfish and 006 in bar
+    # Oahu
+    "OCC-OAH-002"="north","OCC-OAH-005"="east","OCC-OAH-007"="east","OCC-OAH-008"="southeast", "OCC-OAH-009"="south","OCC-OAH-010"="south","OCC-OAH-014"="southwest","OCC-OAH-012"="west",#note 009 doesn't exist
+    # FFS
+    "OCC-FFS-002"="north","OCC-FFS-004"="north","OCC-FFS-007"="east","OCC-FFS-010"="south","OCC-FFS-014"="west",
+    # Pearl & Hermes
+    "OCC-PHR-002"="north","OCC-PHR-016"="west",                  "OCC-PHR-007"="east","OCC-PHR-012"="south",
+    # Wake
+    "OCC-WAK-002"="north","OCC-WAK-005"="east","OCC-WAK-008"="south","OCC-WAK-013"="west",
+    # Guam
+    "OCC-GUA-002"="north","OCC-GUA-005"="east","OCC-GUA-009"="south","OCC-GUA-015"="west",
+    # Saipan
+    "OCC-SAI-002"="north","OCC-SAI-005"="east","OCC-SAI-009"="south","OCC-SAI-012"="west","OCC-SAI-016"="northwest",
+    # Pagan
+    "OCC-PAG-002"="north","OCC-PAG-006"="east","OCC-PAG-009"="south","OCC-PAG-013"="west",
+    # Maug
+    "OCC-MAU-002"="north","OCC-MAU-005"="east","OCC-MAU-019"="south","OCC-MAU-008"="west","OCC-MAU-016"="innerHCO2","OCC-MAU-018"="innerMCO2"
+  )
+
+to_loc3_bar <- function(region, loc2, subRegion, siteName, basin) {
+  bsn       <- tolower(basin)
+  site_norm <- normalize_site(siteName)
+  dplyr::case_when(
+    # Puerto Rico
+    loc2 == "puertoRico" & siteName == "Fajardo" ~ "puertoRico-northeast",
+    bsn == "atlantic" & loc2 == "puertoRico" & siteName %in% c("laParguera","La Parguera") ~
+      "puertoRico-southwest",
+
+    # Florida Keys (BAR logic)
+    loc2 == "keys" & siteName == "UKI1" ~ "keys-uki1",
+    loc2 == "keys" & siteName == "UKI2" ~ "keys-uki2",
+    loc2 == "keys" & siteName == "Cheeca Rocks" ~ "keys-uki3",
+    loc2 == "keys" & siteName == "UKO1" ~ "keys-uko", #changed to uko to combine uko1 and 3    
+    loc2 == "keys" & siteName == "UKO3" ~ "keys-uko", #changed to uko to combine uko1 and 3   
+    loc2 == "keys" & siteName == "MKI1" ~ "keys-mki1",    
+    loc2 == "keys" & siteName == "MKI2" ~ "keys-mki2",
+    loc2 == "keys" & siteName == "MKO1" ~ "keys-mko1",
+    loc2 == "keys" & siteName == "MKO2" ~ "keys-mko2",
+    loc2 == "keys" & siteName == "lKI1" ~ "keys-lki1",
+    loc2 == "keys" & siteName == "lKI2" ~ "keys-lki2",    
+    loc2 == "keys" & siteName == "lKo1" ~ "keys-lko1",
+    loc2 == "keys" & siteName == "lKo2" ~ "keys-lko2",        
+    
+    # Pacific mapped sites
+    bsn == "pacific" & site_norm %in% names(pac_dir_map) ~
+      paste(loc2, pac_dir_map[site_norm], sep = "-"),
+
+    bsn == "pacific" ~ loc2,
+
+    # Atlantic general
+    bsn == "atlantic" & loc2 %in% c(
+      "dryTortugas","flowerGardenBanks","puertoRico",
+      "saintJohn","saintThomas","saintCroix"
+    ) ~ safe_concat(loc2, subRegion),
+
+    TRUE ~ NA_character_
+  )
+}  
+
+to_loc3_parrot <- function(region, loc2, subRegion, siteName, basin) {
+  site_norm <- normalize_site(siteName)
+
+  dplyr::case_when(
+    # Puerto Rico overrides
+    loc2 == "puertoRico" & siteName == "Fajardo"  ~ "puertoRico-northeast",
+#    loc2 == "puertoRico" & siteName == "fajardo" & subRegion == "east"  ~ "puertoRico-northeast",
+#    loc2 == "puertoRico" & siteName == "fajardo" & subRegion == "north" ~ "puertoRico-north",
+    loc2 == "puertoRico" & siteName == "culebra" & subRegion == "east"  ~ "puertoRico-east",
+    loc2 == "puertoRico" & siteName == "laParguera" & subRegion == "south" ~ "puertoRico-southwest",
+    
+    # Florida Keys (PARROT logic)
+    basin == "atlantic" & loc2 == "keys" & subRegion == "lower"  & site_norm == "inshore"  ~ "keys-lki",
+    basin == "atlantic" & loc2 == "keys" & subRegion == "lower"  & site_norm == "offshore" ~ "keys-lko",
+    basin == "atlantic" & loc2 == "keys" & subRegion == "middle" & site_norm == "inshore"  ~ "keys-mki",
+    basin == "atlantic" & loc2 == "keys" & subRegion == "middle" & site_norm == "offshore" ~ "keys-mko",
+    basin == "atlantic" & loc2 == "keys" & subRegion == "upper"  & site_norm == "inshore"  ~ "keys-uki",
+    basin == "atlantic" & loc2 == "keys" & subRegion == "upper"  & site_norm == "offshore" ~ "keys-uko",
+
+    # Pacific mapped sites
+    basin == "pacific" & site_norm %in% names(pac_dir_map) ~
+      paste(loc2, pac_dir_map[site_norm], sep = "-"),
+
+    basin == "pacific" ~ loc2,
+
+    # Atlantic general
+    basin == "atlantic" & loc2 %in% c(
+      "dryTortugas","flowerGardenBanks","puertoRico",
+      "saintJohn","saintThomas","saintCroix"
+    ) ~ safe_concat(loc2, subRegion),
+
+    TRUE ~ NA_character_
+  )
+}  
+
+to_loc3_env <- function(loc2, lat) {
+  env_lat_map <- c(
+    # puerto rico
+    "18.48227"="north","18.33066"="east","18.33696"="northeast","17.91047"="south","17.95355"="southwest","18.34435"="west",
+    # saint croix
+    "17.82805"="east","17.78532"="north","17.70121"="south","17.7338"="west",
+    # saint john
+    "18.36316"="north","18.34744"="east","18.32802"="west","18.30976"="south",
+    # saint thomas
+    "18.34402"="south","18.38262"="north","18.34082"="west",
+    # dry tortugas
+    "24.61123"="west",
+    # florida keys NOTE: Only using the uko3 for the analysis because I've used the 24.88266 uko3 site to change to uko, which will align with other datasets loc3 levels
+    "24.5859"="lki","24.57899"="lki","24.52202"="lko","24.55326"="lko","24.68554"="mki","24.68988"="mki","24.63127"="mko","24.63388"="mko","24.95375"="uki","24.9025"="uko1","24.88266"="uko","24.89742"="uki",
+    # flower garden banks
+    "27.9074"="east",
+    # guam
+    "13.6033"="north","13.47516"="east","13.24126"="south","13.2421"="OCC-GUA-009","13.52894"="west",
+    # maug
+    "20.0357"="north","20.02033"="east","20.01312"="west","20.02296"="innerHCO2","20.02249"="innerMCO2","20.01398"="south",
+    # pagan
+    "18.16784"="north","18.09612"="east","18.04564"="south","18.12014"="west",
+    # saipan
+    "15.29062"="north","15.25866"="east","15.09785"="south","15.15639"="OCC-SAI-012","15.15645"="west","15.25719"="northwest",
+    # hawaii
+    "20.26828"="north","20.24913"="northExtra","19.48642"="east", "19.06075"="south", "19.24432"="west", #removing double north site for consistency
+    # oahu
+    "21.45862"="east","21.47972"="eastExtra","21.28838"="south","21.26184"="southeast","21.53412"="west","21.30566"="southwest", #removing double east site for consistency
+    # french frigate shoals
+    "23.87806"="north","23.88021"="north","23.83515"="east","23.63686"="south","23.79247"="west",
+    # pearl and hermes
+    "27.94055"="north","27.95493"="north","27.86679"="east","27.78237"="south","27.79316"="OCC-PHR-016",
+    # jarvis
+    "-0.36896"="west","-0.38234"="south",
+    # palmyra
+    "5.89733"="north","5.86379"="east","5.88322"="west",
+    # wake
+    "19.31602"="north","19.30616"="east","19.28065"="south","19.31625"="west",
+    # ofu
+    "-14.15785"="north","-14.1733"="south",
+    # tau
+    "-14.2124"="north","-14.25755"="west",
+    # tutuila
+    "-14.24479"="north","-14.28521"="east","-14.36351"="south","-14.29464"="west"
+  )
+  # Make sure map keys are consistently 5-decimal strings
+  nm <- suppressWarnings(as.numeric(names(env_lat_map)))
+  names(env_lat_map) <- sprintf("%.5f", nm)
+
+  # Coerce lat safely + format the same way
+  lat_num <- suppressWarnings(as.numeric(lat))
+  key <- sprintf("%.5f", round(lat_num, 5))
+
+  suffix <- unname(env_lat_map[key])
+
+  # Build loc3 = loc2-suffix (only when suffix exists)
+  out <- ifelse(is.na(suffix) | is.na(loc2) | trimws(loc2) == "",
+                NA_character_,
+                paste0(loc2, "-", suffix))
+
+  out
+}
+```  
+
+### Read and bind raw data
+```{r readBindRawData, echo=FALSE}
+#FUNCTION FOR READING DATA TYPES
+# For Excel (.xlsx)
+read_bind_excel <- function(paths, sheet = NULL) {
+  purrr::map_dfr(
+    paths,
+    ~ readxl::read_excel(.x, sheet = sheet)
+  )
+}
+# For CSVs
+read_bind_csv <- function(paths, col_types) {
+  purrr::map_dfr(paths, ~ readr::read_csv(.x, col_types = col_types, show_col_types = FALSE))
+}
+ct <- cols(
+  .default       = col_guess(),
+  yearFishSurvey = col_integer(),
+  siteFishSurvey = col_character()
+)
+
+#READ AND BIND DATA
+# Read & Bind Bar Data
+barData_raw <-
+  read_bind_excel(c(atl_path, pac_path, dec2025Update_path)) %>%
+  drop_all_na_rows()
+
+# Read & Bind Parrot Community Data
+parrotData_raw <- read_bind_csv(parrot_path, ct) %>%
+  drop_all_na_rows()
+
+# Read & bind environmental data
+environmentalData_raw <- read_bind_csv(c(env_path), cols(.default = col_guess())) %>%
+  drop_all_na_rows()
+```
+
+### Fix inconsistencies in the raw data
+```{r fixRawDataConsistencies, echo=FALSE}
+#barData QAQC
+#Fix typos in barData site names
+barData <- barData_raw %>%
+  mutate(
+    siteName = case_when(
+      siteName == "OCC-HAW-10" ~ "OCC-HAW-010",
+      siteName == "OCC-OAH-012" & as.character(tagNum) == "1660" ~ "OCC-OAH-002",
+      siteName == "OCC-JAR-003" & tagNum %in% c(3265, 3266, 3267, 3268) ~ "OCC-JAR-013",
+      TRUE ~ siteName
+          )
+  )
+#Species naming consistencies 
+barData <- barData %>%
+  mutate(
+    species = case_when(
+      species %in% c("O. faveolata", "Orbicella faveolata", "Orbicella sp.", "O.faveolata") ~ "ofav",
+      species %in% c("P. lobata", "Porites lobata") ~ "plob",
+      species %in% c("Isopora sp.") ~ "iso",
+      TRUE ~ species
+    )
+  )
+other_species <- barData %>%
+  distinct(species) %>%
+  arrange(species)
+#List of all species
+other_species
+
+#Parrot Data QAQC
+parrotData <- parrotData_raw
+
+#Environmental Data QAQC
+environmentalData <- environmentalData_raw
+```
+
+### Create BAR Loc fields
+```{r creatLocFields, echo=FALSE}
+# Create BAR loc fields
+barData <- barData %>%
+  select(-c(dimensions, carbMDPre, carbEQPre, carbMDPost)) %>%
+  mutate(
+    daysDeployed  = as.numeric(ymd(dateRecovery) - ymd(dateDeployment)),
+    yearsDeployed = daysDeployed / 365
+  ) %>%
+  mutate(
+    basin = to_basin(region),
+    loc1  = to_loc1(region),
+    loc2  = to_loc2(region, subRegion),
+    loc3  = to_loc3_bar(region, loc2, subRegion, siteName, basin),
+    loc1.2 = paste(loc1, loc2, sep = ".")
+  )
+
+# Create parrot community loc fields
+parrotData <- parrotData %>%
+  mutate(
+    basin = to_basin(region),
+    loc1  = to_loc1(region),
+    loc2  = to_loc2(region, subRegion),
+    loc3  = to_loc3_parrot(region, loc2, subRegion, siteName, basin),
+    loc1.2 = paste(loc1, loc2, sep = ".")
+  )
+
+# Create environmental data loc fields
+environmentalData <- environmentalData %>%
+  mutate(
+    loc3   = to_loc3_env(loc2, lat),
+    loc1.2 = paste(loc1, loc2, sep = ".")
+  )
+```
+
+### Fix depth issues
+```{r fixDepths, echo=FALSE}
+#Fix depths based on csv tables
+#Pacific depths (match by siteName)
+pac_depths <- read_csv(file.path(data_dir, "barData_pac_depths.csv"), show_col_types = FALSE) %>%
+  transmute(
+    siteName = str_trim(siteName),
+    depth_new = depth    # <-- change if your CSV column isn't literally named "depth"
+  )
+barData <- barData %>%
+  mutate(
+    siteName = str_trim(siteName),
+    basin_l  = tolower(basin)
+  ) %>%
+  left_join(pac_depths, by = "siteName") %>%
+  mutate(
+    depth = if_else(basin_l == "pacific" & !is.na(depth_new), depth_new, depth)
+  ) %>%
+  select(-depth_new, -basin_l)
+
+# Atlantic depths (match by loc3)
+atl_depths <- read_csv(file.path(data_dir, "barData_atl_depths.csv"), show_col_types = FALSE) %>%
+  transmute(
+    loc3 = str_trim(loc3),
+    depth_new = depth    # <-- change if your CSV column isn't literally named "depth"
+  )
+barData <- barData %>%
+  mutate(
+    loc3    = str_trim(loc3),
+    basin_l = tolower(basin)
+  ) %>%
+  left_join(atl_depths, by = "loc3") %>%
+  mutate(
+    depth = if_else(basin_l == "atlantic" & !is.na(depth_new), depth_new, depth)
+  ) %>%
+  select(-depth_new, -basin_l)
+
+#Check completeness by creating list of unmatched Pacific siteName
+pac_sites_in_bar <- barData %>%
+  filter(tolower(basin) == "pacific") %>%
+  distinct(siteName) %>%
+  filter(!is.na(siteName), siteName != "")
+pac_sites_in_csv <- pac_depths %>%
+  distinct(siteName) %>%
+  filter(!is.na(siteName), siteName != "")
+unmatchedDepth_pacific <- list(
+  in_barData_pacific_but_not_in_csv = sort(setdiff(pac_sites_in_bar$siteName, pac_sites_in_csv$siteName)),
+  in_csv_but_not_in_barData_pacific = sort(setdiff(pac_sites_in_csv$siteName, pac_sites_in_bar$siteName))
+)
+unmatchedDepth_pacific
+#Check completeness by creating list of unmatched Atlantic loc3
+atl_loc3_in_bar <- barData %>%
+  filter(tolower(basin) == "atlantic") %>%
+  distinct(loc3) %>%
+  filter(!is.na(loc3), loc3 != "")
+
+atl_loc3_in_csv <- atl_depths %>%
+  distinct(loc3) %>%
+  filter(!is.na(loc3), loc3 != "")
+unmatchedDepth_atlantic <- list(
+  in_barData_atlantic_but_not_in_csv = sort(setdiff(atl_loc3_in_bar$loc3, atl_loc3_in_csv$loc3)),
+  in_csv_but_not_in_barData_atlantic = sort(setdiff(atl_loc3_in_csv$loc3, atl_loc3_in_bar$loc3))
+)
+unmatchedDepth_atlantic
+```
+
+### Add in skeletal source info
+```{r add skeletal source to BMU data, echo=FALSE}
+# Load BMU database (lookup table)
+bmuDatabase <- read_csv(file.path(data_dir, "NCRMP_BMU_DatabaseNewFeb2025.csv"), show_col_types = FALSE)
+
+# Join FromColony onto barData as skeletalSource (Tag_num -> tagNum)
+barData <- barData %>%
+  dplyr::mutate(tagNum_chr = as.character(tagNum)) %>%   # TEMP join key
+  dplyr::left_join(
+    bmuDatabase %>%
+      dplyr::transmute(
+        tagNum_chr      = as.character(Tag_num),
+        skeletalSource  = as.character(FromColony)
+      ),
+    by = "tagNum_chr"
+  ) %>%
+  dplyr::select(-tagNum_chr) 
+
+cat("Non-missing skeletalSource:",
+    sum(!is.na(barData$skeletalSource)), "\n")
+
+# See which tags failed to match
+barData %>%
+  filter(is.na(skeletalSource)) %>%
+  distinct(tagNum) %>%
+  arrange(tagNum) %>%
+  print(n = 20)
+```
+
+### Calculate BAR rates
+```{r calculateBarRates, echo=FALSE}
+# Derived metrics (area/time standardized)
+preSA <- 24  # cm^2 exterior-facing bar (2 x 1 x 5 cm block)
+barData <- barData %>%
+  mutate(
+    grazing                = volumeBlockPost - macroboring - volumeBlockPre,
+    deltaMass_mgcm2y       = 1000 * (massCleanPost - massEpoxiedPre) / preSA / yearsDeployed,
+    deltaMass_kgm2y        = 0.01 * 1000 * (massCleanPost - massEpoxiedPre) / preSA / yearsDeployed,
+    deltaVolume_mm3cm2y    = 1000 * (volumeBlockPost + accretion - volumeBlockPre) / preSA / yearsDeployed,
+    deltaDensity_mgcm3cm2y = 1000 * (densityCTPost - densityCTPre) / preSA / yearsDeployed,
+    macroboring_mm3cm2y    = 1000 * macroboring / preSA / yearsDeployed,
+    accretion_mm3cm2y      = 1000 * accretion   / preSA / yearsDeployed,
+    grazing_mm3cm2y        = 1000 * grazing     / preSA / yearsDeployed
+  )
+
+vars <- c(
+  "deltaMass_mgcm2y",
+  "deltaMass_kgm2y",
+  "deltaVolume_mm3cm2y",
+  "deltaDensity_mgcm3cm2y",
+  "macroboring_mm3cm2y",
+  "accretion_mm3cm2y",
+  "grazing_mm3cm2y"
+)
+
+
+```
+
+### Graph response distributions, remove bar outliers over 3sd
+```{r dealWithOutliers, echo=FALSE}
+# =========================
+# (2) Multipanel histograms with ±3 SD highlighting
+# =========================
+long_df <- barData %>% ###JTM Note: changed from barData1 to barData to run outlier identification on NA filtered dataset
+  pivot_longer(cols = all_of(vars), names_to = "variable", values_to = "value") %>%
+  filter(!is.na(value)) %>%
+  group_by(variable) %>%
+  mutate(
+    mu  = mean(value, na.rm = TRUE),
+    sdv = sd(value,   na.rm = TRUE),
+    lower = mu - 3 * sdv,   # <-- CHANGED
+    upper = mu + 3 * sdv,   # <-- CHANGED
+    outlier = value < lower | value > upper
+  ) %>%
+  ungroup()
+
+ggplot(long_df, aes(x = value, fill = outlier)) +
+  geom_histogram(bins = 30, color = "black") +
+  scale_fill_manual(values = c(`FALSE` = "grey80", `TRUE` = "red"),
+                    name = "Outside ±3 SD") +  # <-- CHANGED
+  facet_wrap(~ variable, scales = "free", ncol = 2) +
+  labs(
+    title = "QA/QC Histograms of BAR Variables",
+    x = NULL, y = "Frequency"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "top")
+
+# =========================
+# (2A) Table of outliers (values beyond ±3 SD)
+# =========================
+outlier_table <- barData %>% ###JTM Note: changed from barData1 to barData to run outlier identification on NA filtered dataset
+  mutate(tag = .data[["tagNum"]]) %>% #Added this line based on above note
+  pivot_longer(cols = all_of(vars), names_to = "variable", values_to = "value") %>%
+  group_by(variable) %>%
+  mutate(
+    mu  = mean(value, na.rm = TRUE),
+    sdv = sd(value, na.rm = TRUE),
+    lower = mu - 3 * sdv,   # <-- CHANGED
+    upper = mu + 3 * sdv,   # <-- CHANGED
+    outlier_value = if_else(value < lower | value > upper, as.character(value), "")
+  ) %>%
+  ungroup() %>%
+  select(tag, variable, outlier_value) %>%
+  pivot_wider(names_from = variable, values_from = outlier_value) %>%
+  filter(if_any(all_of(vars), ~ .x != "")) %>%
+  arrange(tag)
+
+pretty_names_out <- names(outlier_table)
+pretty_names_out[pretty_names_out == "tag"] <- "Bar tag"
+
+outlier_table %>%
+  mutate(across(all_of(vars), ~ ifelse(. == "", "&nbsp;", .))) %>%
+  kbl(
+    escape    = FALSE,
+    col.names = pretty_names_out,
+    booktabs  = TRUE,
+    align     = "l",
+    caption   = "Values Outside ±3 SD (by variable)"  # <-- CHANGED
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "condensed", "hover"),
+    full_width        = FALSE,
+    position          = "left",
+    fixed_thead       = TRUE
+  ) %>%
+  scroll_box(height = "420px", width = "100%")
+
+
+cat("Bars to remove due to ±3 SD outliers:", dplyr::n_distinct(outlier_table$tag), "\n")
+
+# filter out outliers
+barData <- barData %>%
+  filter(!tagNum %in% outlier_table$tag)
+```
+
+### Graph deployment duration
+```{r deploymentHistogram, include=FALSE}
+# =========================
+# Histogram of duration with ±3 SD highlighting
+# =========================
+durationDistribution <- ggplot(barData, aes(x = duration)) +
+  geom_histogram(bins = 30, color = "black", fill = "grey80") +
+  labs(
+    title = "Distribution of Duration",
+    x = "Duration",
+    y = "Frequency"
+  ) +
+  theme_minimal(base_size = 12)
+durationDistribution
+
+## Regression of deployment distribution
+lm_model_deltaMassVsDays <- lm(deltaMass_mgcm2y ~ daysDeployed, data = barData)
+r_squared_deltaMassVsDays <- summary(lm_model_deltaMassVsDays)$r.squared
+plotDeltaMassVsDays <- ggplot(barData, aes(x = daysDeployed, y = deltaMass_mgcm2y)) +
+  geom_point(aes(color = factor(loc1.2)))+  # Scatterplot
+  geom_smooth(method = "lm", se = TRUE, color = "black") +
+  theme_minimal() +
+  scale_color_manual(values = loc_colors) +
+  geom_text(data = subset(barData, daysDeployed > 2500), aes(label = tagNum), hjust = -0.1, vjust = -0.5, size = 2)+# Add tag numbers here where days deployed is greater than 2500
+  geom_text(data = subset(barData, deltaMass_mgcm2y > 100), aes(label = tagNum), hjust = -0.1, vjust = -0.5, size = 2)+# Add tag numbers here where delta mass is greater than 100
+  geom_text(x = 2000, y = 100, label = paste("R^2 =", round(r_squared_deltaMassVsDays, 5)), size = 3)
+#Plot of deltaVolume_mm3cm2y vs. daysDeployed:
+lm_model_deltaVolumeVsDays <- lm(deltaVolume_mm3cm2y ~ daysDeployed, data = barData)
+r_squared_deltaVolumeVsDays <- summary(lm_model_deltaVolumeVsDays)$r.squared
+plotDeltaVolumeVsDays <- ggplot(barData, aes(x = daysDeployed, y = deltaVolume_mm3cm2y)) +
+  geom_point(aes(color = factor(loc1.2))) +  # Scatterplot
+  geom_smooth(method = "lm", se = TRUE, color = "black") +
+  theme_minimal()+
+  scale_color_manual(values = loc_colors) +
+  geom_text(x = 2000, y = -30, label = paste("R^2 =", round(r_squared_deltaVolumeVsDays, 5)), size = 3)
+#Plot of deltaDensity_mgcm3cm2y vs. daysDeployed:
+lm_model_deltaDensityVsDays <- lm(deltaDensity_mgcm3cm2y ~ daysDeployed, data = barData)
+r_squared_deltaDensityVsDays <- summary(lm_model_deltaDensityVsDays)$r.squared
+plotDeltaDensityVsDays <- ggplot(barData, aes(x = daysDeployed, y = deltaDensity_mgcm3cm2y)) +
+  geom_point(aes(color = factor(loc1.2))) +  # Scatterplot
+  geom_smooth(method = "lm", se = TRUE, color = "black") +
+  theme_minimal()+
+  scale_color_manual(values = loc_colors) +
+  geom_text(x = 2000, y = -5, label = paste("R^2 =", round(r_squared_deltaDensityVsDays, 5)), size = 3)
+#Plot of macroboring_mm3cm2y vs. daysDeployed:
+lm_model_macroboringVsDays <- lm(macroboring_mm3cm2y ~ daysDeployed, data = barData)
+r_squared_macroboringVsDays <- summary(lm_model_macroboringVsDays)$r.squared
+plotMacroboringVsDays <- ggplot(barData, aes(x = daysDeployed, y = macroboring_mm3cm2y)) +
+  geom_point(aes(color = factor(loc1.2))) +  # Scatterplot
+  geom_smooth(method = "lm", se = TRUE, color = "black") +
+  theme_minimal()+
+  scale_color_manual(values = loc_colors) +
+  geom_text(x = 2000, y = -30, label = paste("R^2 =", round(r_squared_macroboringVsDays, 5)), size = 3)
+#Plot of grazing_mm3cm2y vs. daysDeployed:
+lm_model_grazingVsDays <- lm(grazing_mm3cm2y ~ daysDeployed, data = barData)
+r_squared_grazingVsDays <- summary(lm_model_grazingVsDays)$r.squared
+plotGrazingVsDays <- ggplot(barData, aes(x = daysDeployed, y = grazing_mm3cm2y)) +
+  geom_point(aes(color = factor(loc1.2))) +  # Scatterplot
+  geom_smooth(method = "lm", se = TRUE, color = "black") +
+  theme_minimal()+
+  scale_color_manual(values = loc_colors) +
+  geom_text(x = 2000, y = -75, label = paste("R^2 =", round(r_squared_grazingVsDays, 2)), size = 3)
+#Plot of accretion_mm3cm2y vs. daysDeployed:
+lm_model_accretionVsDays <- lm(accretion_mm3cm2y ~ daysDeployed, data = barData)
+r_squared_accretionVsDays <- summary(lm_model_accretionVsDays)$r.squared
+plotAccretionVsDays <- ggplot(barData, aes(x = daysDeployed, y = accretion_mm3cm2y)) +
+  geom_point(aes(color = factor(loc1.2))) +  # Scatterplot
+  geom_smooth(method = "lm", se = TRUE, color = "black") +
+  theme_minimal()+
+  scale_color_manual(values = loc_colors) +
+  geom_text(x = 2000, y = 100, label = paste("R^2 =", round(r_squared_accretionVsDays, 2)), size = 3)
+ggarrange(plotDeltaMassVsDays,plotDeltaVolumeVsDays,plotDeltaDensityVsDays,plotMacroboringVsDays,plotGrazingVsDays,plotAccretionVsDays, ncol = 3, nrow = 2, common.legend = TRUE, legend = "bottom")
+```
+
+### Clean data
+Remove data that is
+1. Not successfully recovered
+2. Not plob or mcav
+3. Tag 1022
+4. Data from Maug seep
+5. Grazing data that is positive
+6. Deployed for more than 6 years or less than 2 years
+7. Depth is less than 10m
+```{r cleanData, echo=FALSE}
+barData <- barData %>%
+  filter(fate == "SUCCESSFULLY RECOVERED",
+         species != "iso",
+         tagNum != 1022,
+         loc3 != "maug-innerMCO2",
+         loc3 != "maug-innerHCO2",
+         grazing_mm3cm2y < 0 | is.na(grazing_mm3cm2y),
+         duration < 6,
+         duration > 2,
+         depth >= 10)
+```
+
+### Remove vars with low replication
+``` {r removeLowReplicationVars, echo=FALSE}
+min_reps <- 3
+# ---- helper: mask one variable based on loc3 replication ----
+mask_low_rep_one <- function(df, var, min_reps) {
+  var_sym <- rlang::sym(var)
+
+  df %>%
+    dplyr::group_by(loc3) %>%
+    dplyr::mutate(
+      .n_non_na = sum(!is.na(!!var_sym)),
+      !!var_sym := dplyr::if_else(
+        .n_non_na < min_reps,
+        NA_real_,
+        as.numeric(!!var_sym)
+      )
+    ) %>%
+    dplyr::ungroup() %>%
+    dplyr::select(-.n_non_na)
+}
+
+# ---- apply to each variable ----
+for (v in vars) {
+  barData <- mask_low_rep_one(barData, v, min_reps)
+}
+
+# ---- summary table ----
+mask_summary <- purrr::map_dfr(vars, function(v) {
+  var_sym <- rlang::sym(v)
+
+  barData %>%
+    dplyr::group_by(loc3) %>%
+    dplyr::summarise(
+      n_non_na = sum(!is.na(!!var_sym)),
+      .groups = "drop"
+    ) %>%
+    dplyr::summarise(
+      var = v,
+      n_locs_total = dplyr::n(),
+      n_locs_below_min = sum(n_non_na < min_reps)
+    )
+})
+
+cat(sprintf(
+  "### Values masked (set to NA) where loc3 has < %d non-NA measurements (per variable)\n",
+  min_reps
+))
+
+if (requireNamespace("knitr", quietly = TRUE)) {
+  knitr::kable(mask_summary)
+} else {
+  print(mask_summary)
+}
+```
+
+### Remove rows that have NA's for all vars
+```{r dropAllNAvars, echo=FALSE}
+barData <- barData %>%
+  dplyr::filter(
+    !if_all(dplyr::all_of(vars), ~ is.na(.x))
+  )
+```
+
+### Check binds across datasets
+```{r checkBinds, echo=FALSE}
+# ===== Function (general 3-way compare) =====
+compare_loc <- function(df_bar, df_parrot, df_env, loc_col) {
+  join_col <- rlang::as_name(rlang::ensym(loc_col))
+
+  full_join(
+    df_bar    %>% distinct({{loc_col}}) %>% mutate(in_BAR = TRUE),
+    df_parrot %>% distinct({{loc_col}}) %>% mutate(in_PARROT = TRUE),
+    by = join_col
+  ) %>%
+    full_join(
+      df_env %>% distinct({{loc_col}}) %>% mutate(in_ENV = TRUE),
+      by = join_col
+    ) %>%
+    # Any missing membership flags become FALSE
+    mutate(across(starts_with("in_"), ~ tidyr::replace_na(., FALSE))) %>%
+    mutate(
+      match_status = case_when(
+        in_BAR & in_PARROT & in_ENV                  ~ "MATCH",
+        in_BAR & in_PARROT & !in_ENV                 ~ "BAR & PARROT only",
+        in_BAR & in_ENV    & !in_PARROT              ~ "BAR & ENV only",
+        in_PARROT & in_ENV & !in_BAR                 ~ "PARROT & ENV only",
+        in_BAR    & !in_PARROT & !in_ENV            ~ "ONLY in BAR",
+        in_PARROT & !in_BAR    & !in_ENV            ~ "ONLY in PARROT",
+        in_ENV    & !in_BAR    & !in_PARROT         ~ "ONLY in ENV",
+        TRUE                                          ~ "UNKNOWN"
+      )
+    ) %>%
+    arrange({{loc_col}})
+}
+
+# ===== Function (original 2-way BAR vs PARROT only) =====
+compare_loc_2way <- function(df_bar, df_parrot, loc_col) {
+  join_col <- rlang::as_name(rlang::ensym(loc_col))
+
+  full_join(
+    df_bar    %>% distinct({{loc_col}}) %>% mutate(in_BAR = TRUE),
+    df_parrot %>% distinct({{loc_col}}) %>% mutate(in_PARROT = TRUE),
+    by = join_col
+  ) %>%
+    mutate(across(starts_with("in_"), ~ tidyr::replace_na(., FALSE))) %>%
+    mutate(
+      match_status = case_when(
+        in_BAR & in_PARROT  ~ "MATCH",
+        in_BAR & !in_PARROT ~ "ONLY in BAR",
+        !in_BAR & in_PARROT ~ "ONLY in PARROT",
+        TRUE                ~ "UNKNOWN"
+      )
+    ) %>%
+    arrange({{loc_col}})
+}
+
+# ===== Run comparisons =====
+loc1_compare <- compare_loc(barData, parrotData, environmentalData, loc1)
+loc2_compare <- compare_loc(barData, parrotData, environmentalData, loc2)
+loc3_compare <- compare_loc(barData, parrotData, environmentalData, loc3)  # <-- now 3-way
+
+# ===== View results =====
+kable(loc1_compare, caption = "loc1 Comparison: BAR vs PARROT vs ENV")
+kable(loc2_compare, caption = "loc2 Comparison: BAR vs PARROT vs ENV")
+kable(loc3_compare, caption = "loc3 Comparison: BAR vs PARROT vs ENV")
+```
+
+### Removes Env and Parrot data if parrot and env only, or only in env, or only parrot
+```{r removeEnvWithoutBAR_loc3, echo=FALSE}
+# loc3s that should NOT exist outside BAR
+bad_loc3 <- loc3_compare %>%
+  dplyr::filter(match_status %in% c("PARROT & ENV only", "ONLY in ENV", "ONLY in PARROT")) %>%
+  dplyr::pull(loc3) %>%
+  unique()
+
+cat("Removing loc3 missing from BAR:", length(bad_loc3), "\n")
+
+# ---- filter parrot + env ONLY ----
+parrotData <- parrotData %>%
+  dplyr::filter(!(loc3 %in% bad_loc3))
+
+environmentalData <- environmentalData %>%
+  dplyr::filter(!(loc3 %in% bad_loc3))
+```
+
+### Check binds across datasets again after removal
+```{r checkBindsAgain, echo=FALSE}
+# ===== Function (general 3-way compare) =====
+compare_loc <- function(df_bar, df_parrot, df_env, loc_col) {
+  join_col <- rlang::as_name(rlang::ensym(loc_col))
+
+  full_join(
+    df_bar    %>% distinct({{loc_col}}) %>% mutate(in_BAR = TRUE),
+    df_parrot %>% distinct({{loc_col}}) %>% mutate(in_PARROT = TRUE),
+    by = join_col
+  ) %>%
+    full_join(
+      df_env %>% distinct({{loc_col}}) %>% mutate(in_ENV = TRUE),
+      by = join_col
+    ) %>%
+    # Any missing membership flags become FALSE
+    mutate(across(starts_with("in_"), ~ tidyr::replace_na(., FALSE))) %>%
+    mutate(
+      match_status = case_when(
+        in_BAR & in_PARROT & in_ENV                  ~ "MATCH",
+        in_BAR & in_PARROT & !in_ENV                 ~ "BAR & PARROT only",
+        in_BAR & in_ENV    & !in_PARROT              ~ "BAR & ENV only",
+        in_PARROT & in_ENV & !in_BAR                 ~ "PARROT & ENV only",
+        in_BAR    & !in_PARROT & !in_ENV            ~ "ONLY in BAR",
+        in_PARROT & !in_BAR    & !in_ENV            ~ "ONLY in PARROT",
+        in_ENV    & !in_BAR    & !in_PARROT         ~ "ONLY in ENV",
+        TRUE                                          ~ "UNKNOWN"
+      )
+    ) %>%
+    arrange({{loc_col}})
+}
+
+# ===== Function (original 2-way BAR vs PARROT only) =====
+compare_loc_2way <- function(df_bar, df_parrot, loc_col) {
+  join_col <- rlang::as_name(rlang::ensym(loc_col))
+
+  full_join(
+    df_bar    %>% distinct({{loc_col}}) %>% mutate(in_BAR = TRUE),
+    df_parrot %>% distinct({{loc_col}}) %>% mutate(in_PARROT = TRUE),
+    by = join_col
+  ) %>%
+    mutate(across(starts_with("in_"), ~ tidyr::replace_na(., FALSE))) %>%
+    mutate(
+      match_status = case_when(
+        in_BAR & in_PARROT  ~ "MATCH",
+        in_BAR & !in_PARROT ~ "ONLY in BAR",
+        !in_BAR & in_PARROT ~ "ONLY in PARROT",
+        TRUE                ~ "UNKNOWN"
+      )
+    ) %>%
+    arrange({{loc_col}})
+}
+
+# ===== Run comparisons =====
+loc1_compare <- compare_loc(barData, parrotData, environmentalData, loc1)
+loc2_compare <- compare_loc(barData, parrotData, environmentalData, loc2)
+loc3_compare <- compare_loc(barData, parrotData, environmentalData, loc3)  # <-- now 3-way
+
+# ===== View results =====
+kable(loc1_compare, caption = "loc1 Comparison: BAR vs PARROT vs ENV")
+kable(loc2_compare, caption = "loc2 Comparison: BAR vs PARROT vs ENV")
+kable(loc3_compare, caption = "loc3 Comparison: BAR vs PARROT vs ENV")
+```
+
+### Count numbers of replicates of each variable by loc2 and loc3
+```{r counts_by_loc2_loc3, echo=FALSE, message=FALSE, warning=FALSE}
+# Safety check (prevents the pivot_longer-style error you hit earlier)
+stopifnot(is.character(vars))
+# Counts by loc2
+count_loc2 <- barData %>%
+  group_by(loc2) %>%
+  summarise(
+    across(all_of(vars), ~ sum(!is.na(.x)), .names = "{.col}"),
+    n_rows = n(),
+    .groups = "drop"
+  ) %>%
+  relocate(n_rows, .after = loc2) %>%
+  arrange(desc(n_rows)) %>%
+  bind_rows(
+    summarise(
+      .,
+      loc2   = "TOTAL",
+      n_rows = sum(n_rows),
+      across(all_of(vars), sum)
+    )
+  )
+
+count_loc2 %>%
+  kbl(
+    caption = "Non-missing counts by loc2 (per variable)"
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE
+  ) %>%
+  scroll_box(
+    height = "450px",
+    width  = "100%"
+  )
+
+# Counts by loc3
+count_loc3 <- barData %>%
+  group_by(loc3) %>%
+  summarise(
+    across(all_of(vars), ~ sum(!is.na(.x)), .names = "{.col}"),
+    n_rows = n(),
+    .groups = "drop"
+  ) %>%
+  relocate(n_rows, .after = loc3) %>%
+  arrange(desc(n_rows)) %>%
+  bind_rows(
+    summarise(
+      .,
+      loc3   = "TOTAL",
+      n_rows = sum(n_rows),
+      across(all_of(vars), sum)
+    )
+  )
+
+count_loc3 %>%
+  kbl(
+    caption = "Non-missing counts by loc3 (per variable)"
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE
+  ) %>%
+  scroll_box(
+    height = "450px",
+    width  = "100%"
+  )
+```
+
+
+
+# Data exploration
+## General
+### Map of BAR, parrot surveys, and environmental sites
+```{r, echo=FALSE}
+barSiteMap <- leaflet() %>%
+  addProviderTiles(providers$CartoDB.PositronNoLabels) %>%
+
+  # ===== BAR DATA =====
+  addCircleMarkers(
+    data = barData,
+    lng = ~longitude, lat = ~latitude,
+    radius = 2, color = "blue",
+    label = ~paste0(loc3),
+    labelOptions = labelOptions(
+      noHide = TRUE,
+      direction = "top",
+      textsize = "12px",
+      offset = c(0, -4)
+    )
+  ) %>%
+
+  # ===== PARROTFISH DATA =====
+  addCircleMarkers(
+    data = parrotData,
+    lng = ~longitudeFishSurvey, lat = ~latitudeFishSurvey,
+    radius = 1, color = "red",
+    popup = ~paste0(loc3,",",siteFishSurvey)   
+  )   %>%
+
+  # ===== ENVIRONMENTAL DATA (COMMENTED OUT) =====
+
+  addCircleMarkers(
+    data = environmentalData,
+    lng = ~lon, lat = ~lat,
+    radius = 4, color = "green",
+    popup = ~paste0(loc3,",",lat,",",lon)   
+  ) %>%
+
+  addCircleMarkers(
+    data = environmentalData_raw,
+    lng = ~lon, lat = ~lat,
+    radius = .5, color = "orange",
+    popup = ~paste0(lat,",",lon)   
+  )
+
+
+barSiteMap
+```
+
+### Timeline of BAR data, parrot surveys, and environmental data
+```{r, echo=FALSE}
+# -----------------------------
+# 0) Appearance knobs (tweak as desired)
+# -----------------------------
+tick_h        <- 0.18  # half-height of deploy/recover vertical ticks
+sst_y_offset  <- 0.25  # SST dots sit this far below the site line
+chl_y_offset  <- 0.35  # chlorophyll dots sit slightly further down
+sst_col       <- "mean_Sea_Surface_Temperature_CRW_daily_01mo"  # <— your SST column
+
+# Helper: pick a likely chlorophyll column if you don't want to hardcode it
+pick_chl_col <- function(df) {
+  cols <- names(df)
+  cand <- cols[grepl("chlor|chla|chl_a|chlorophyll", cols, ignore.case = TRUE)]
+  # prefer "mean" if present
+  cand <- c(cand[grepl("mean", cand, ignore.case = TRUE)],
+            setdiff(cand, cand[grepl("mean", cand, ignore.case = TRUE)]))
+  if (length(cand)) cand[1] else NA_character_
+}
+
+# If you prefer to hardcode a chlorophyll column, set it here (uncomment & edit):
+# chl_col <- "mean_Chlorophyll_MODIS_daily_01mo"
+chl_col <- pick_chl_col(environmentalData)
+
+# -----------------------------
+# 1) Timeline data (deploy/recover)
+# -----------------------------
+timeline_df <- barData %>%
+  mutate(
+    deploy  = ymd(dateDeployment),
+    recover = ymd(dateRecovery)
+  ) %>%
+  filter(!is.na(loc1.2), !is.na(deploy), !is.na(recover)) %>%
+  mutate(
+    start = pmin(deploy, recover, na.rm = TRUE),
+    end   = pmax(deploy, recover, na.rm = TRUE)
+  ) %>%
+  group_by(loc1.2) %>%
+  arrange(start, .by_group = TRUE) %>%
+  ungroup()
+
+# order sites by first deployment and freeze that order
+site_levels <- timeline_df %>%
+  group_by(loc1.2) %>%
+  summarise(first_start = min(start, na.rm = TRUE), .groups = "drop") %>%
+  arrange(first_start) %>%
+  pull(loc1.2)
+
+timeline_df <- timeline_df %>%
+  mutate(
+    loc1.2 = factor(loc1.2, levels = site_levels),
+    y_num  = as.numeric(loc1.2)
+  )
+
+# -----------------------------
+# 2) Parrot survey data (black points, mid-year)
+# -----------------------------
+survey_df <- parrotData %>%
+  filter(!is.na(loc1.2), !is.na(yearFishSurvey)) %>%
+  mutate(
+    year_date = ymd(paste0(as.character(yearFishSurvey), "-07-01")),
+    loc1.2    = factor(loc1.2, levels = site_levels),
+    y_num     = as.numeric(loc1.2)
+  ) %>%
+  filter(!is.na(year_date), !is.na(y_num))
+
+# -----------------------------
+# 3) Environmental SST (light red dots) — date is DMY
+# -----------------------------
+sst_df <- environmentalData %>%
+  mutate(
+    date   = dmy(date),             # <-- your environmentalData date format
+    sstval = .data[[sst_col]],
+    loc1.2 = factor(loc1.2, levels = site_levels),
+    y_num  = as.numeric(loc1.2)
+  ) %>%
+  filter(!is.na(loc1.2), !is.na(date), !is.na(sstval), !is.na(y_num))
+
+# -----------------------------
+# 4) Environmental Chlorophyll (light green dots) — date is DMY
+# -----------------------------
+chl_df <- environmentalData %>%
+  mutate(
+    date   = dmy(date),
+    chlval = if (!is.na(chl_col)) .data[[chl_col]] else NA_real_,
+    loc1.2 = factor(loc1.2, levels = site_levels),
+    y_num  = as.numeric(loc1.2)
+  ) %>%
+  filter(!is.na(loc1.2), !is.na(date), !is.na(chlval), !is.na(y_num))
+
+# -----------------------------
+# 5) Plot
+# -----------------------------
+p_timeline <- ggplot() +
+  # Grey bar: deployment → recovery
+  geom_segment(
+    data = timeline_df,
+    aes(x = start, xend = end, y = y_num, yend = y_num),
+    linewidth = 3, lineend = "round", color = "grey50"
+  ) +
+  # Deployment tick (green)
+  geom_segment(
+    data = timeline_df,
+    aes(x = start, xend = start, y = y_num - tick_h, yend = y_num + tick_h),
+    linewidth = 0.9, color = "forestgreen"
+  ) +
+  # Recovery tick (red)
+  geom_segment(
+    data = timeline_df,
+    aes(x = end, xend = end, y = y_num - tick_h, yend = y_num + tick_h),
+    linewidth = 0.9, color = "firebrick"
+  ) +
+  # Parrot survey years (black)
+  geom_point(
+    data = survey_df,
+    aes(x = year_date, y = y_num),
+    size = 2.2, color = "black", alpha = 0.9
+  ) +
+  # SST dots (light red) with legend
+  geom_point(
+    data = sst_df,
+    aes(x = date, y = y_num - sst_y_offset, color = "Mean SST (01mo)"),
+    size = 0.9, alpha = 0.8
+  ) +
+  # Chlorophyll dots (light green) with legend
+  geom_point(
+    data = chl_df,
+    aes(x = date, y = y_num - chl_y_offset, color = "Chlorophyll"),
+    size = 0.7, alpha = 0.8
+  ) +
+  # Legend (SST + Chlor) at bottom
+  scale_color_manual(
+    name   = NULL,
+    values = c("Mean SST (01mo)" = "tomato", "Chlorophyll" = "palegreen3"),
+    breaks = c("Mean SST (01mo)", "Chlorophyll")
+  ) +
+  guides(
+    color = guide_legend(
+      override.aes = list(size = 3, alpha = 1, shape = 16)
+    )
+  ) +
+  # Axes & theme
+  scale_x_date(name = NULL, date_breaks = "6 months", date_labels = "%Y-%m") +
+  scale_y_continuous(
+    name = NULL,
+    breaks = seq_along(site_levels),
+    labels = site_levels
+  ) +
+  ggtitle("Deployments (green), Recoveries (red), Surveys (black), SST (light red), Chlorophyll (light green)") +
+  theme_bw(base_size = 12) +
+  theme(
+    panel.grid.minor = element_blank(),
+    axis.text.y = element_text(size = 9),
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+    legend.position = "bottom"
+  )
+
+p_timeline
+```
+
+
+
+## BAR data
+### Summary of locations and durations
+```{r barDeploymentSummaryData, include=FALSE}
+nLoc1 <-length(unique(barData$loc1))
+listLoc1 <-unique(barData$loc1)
+nLoc2 <-length(unique(barData$loc2))
+listLoc2 <-unique(barData$loc2)
+nLoc3 <-length(unique(barData$loc3))
+minDeployment <- min(barData$dateDeployment)
+maxDeployment <- max(barData$dateDeployment)
+minRecovery <- min(barData$dateRecovery)
+maxRecovery <- max(barData$dateRecovery)
+minDuration <- min(barData$daysDeployed)
+maxDuration <- max(barData$daysDeployed)
+meanDuration <- mean(barData$daysDeployed)
+```
+
+Sites are divided at three levels across 2 basins. The highest level (loc1) includes `r nLoc1` large regions including:  
+<small>`r listLoc1`</small>  
+  
+Within these larger regions are `r nLoc2` sublevels (loc2) that are generally inclusive of an island including:  
+<small>`r listLoc2`</small>  
+  
+Most islands or loc2 level includes multiple sites (loc3) within it, totaling `r nLoc3` loc3 levels across both basins
+  
+Deployment dates ranged from `r minDeployment` to `r maxDeployment` and recovery dates ranged from `r minRecovery` to `r maxRecovery`. The deployment duration ranged from `r minDuration` to `r maxDuration` days and was on `r meanDuration` days.
+
+### Calculation of stats for bar alteration by loc2
+```{r barStatCalculations_loc2, echo=FALSE}
+barStatsLoc2 <- barData %>%
+  group_by(basin, loc1, loc2, loc1.2) %>%
+  summarise(
+    # duration
+    maxDays = max(daysDeployed, na.rm = TRUE),
+    minDays = min(daysDeployed, na.rm = TRUE),
+    n       = dplyr::n(),
+
+    # depth
+    maxDepth  = max(depth, na.rm = TRUE),
+    minDepth  = min(depth, na.rm = TRUE),
+    meanDepth = mean(depth, na.rm = TRUE),
+
+    # deltaMass_mgcm2y
+    meanDeltaMass_mgcm2y  = mean(deltaMass_mgcm2y, na.rm = TRUE),
+    countDeltaMass_mgcm2y = sum(!is.na(deltaMass_mgcm2y)),
+    sdDeltaMass_mgcm2y    = sd(deltaMass_mgcm2y, na.rm = TRUE),
+    seDeltaMass_mgcm2y    = sdDeltaMass_mgcm2y / sqrt(countDeltaMass_mgcm2y),
+
+    # deltaMass_kgm2y
+    meanDeltaMass_kgm2y  = mean(deltaMass_kgm2y, na.rm = TRUE),
+    countDeltaMass_kgm2y = sum(!is.na(deltaMass_kgm2y)),
+    sdDeltaMass_kgm2y    = sd(deltaMass_kgm2y, na.rm = TRUE),
+    seDeltaMass_kgm2y    = sdDeltaMass_kgm2y / sqrt(countDeltaMass_kgm2y),    
+      
+    # deltaVolume
+    meanDeltaVolume  = mean(deltaVolume_mm3cm2y, na.rm = TRUE),
+    countDeltaVolume = sum(!is.na(deltaVolume_mm3cm2y)),
+    sdDeltaVolume    = sd(deltaVolume_mm3cm2y, na.rm = TRUE),
+    seDeltaVolume    = sdDeltaVolume / sqrt(countDeltaVolume),
+  
+    # deltaDensity
+    meanDeltaDensity  = mean(deltaDensity_mgcm3cm2y, na.rm = TRUE),
+    countDeltaDensity = sum(!is.na(deltaDensity_mgcm3cm2y)),
+    sdDeltaDensity    = sd(deltaDensity_mgcm3cm2y, na.rm = TRUE),
+    seDeltaDensity    = sdDeltaDensity / sqrt(countDeltaDensity),
+  
+    # macroboring
+    meanMacroboring  = mean(macroboring_mm3cm2y, na.rm = TRUE),
+    countMacroboring = sum(!is.na(macroboring_mm3cm2y)),
+    sdMacroboring    = sd(macroboring_mm3cm2y, na.rm = TRUE),
+    seMacroboring    = sdMacroboring / sqrt(countMacroboring),
+  
+    # accretion
+    meanAccretion  = mean(accretion_mm3cm2y, na.rm = TRUE),
+    countAccretion = sum(!is.na(accretion_mm3cm2y)),
+    sdAccretion    = sd(accretion_mm3cm2y, na.rm = TRUE),
+    seAccretion    = sdAccretion / sqrt(countAccretion),
+    
+    # grazing
+    meanGrazing  = mean(grazing_mm3cm2y, na.rm = TRUE),
+    countGrazing = sum(!is.na(grazing_mm3cm2y)),
+    sdGrazing    = sd(grazing_mm3cm2y, na.rm = TRUE),
+    seGrazing    = sdGrazing / sqrt(countGrazing),
+
+  
+    .groups = "drop"
+  )
+
+kbl(barStatsLoc2, align = "l") %>%
+  kable_classic(full_width = FALSE, html_font = "Cambria") %>%
+  add_header_above(c(
+    "location"     = 4,
+    "duration"     = 3,  # maxDays, minDays, n
+    "depth"        = 3,
+    "deltaMass_mgcm2yr"= 4,
+    "deltaMass_kgm2y"= 4,
+    "deltaVolume"  = 4,
+    "deltaDensity" = 4,
+    "macroboring"  = 4,
+    "accretion"    = 4,
+    "grazing"      = 4
+  )) %>%
+  scroll_box(width = "1000px", height = "500px")
+```
+### Calculation of stats for bar alteration by loc3
+```{r barStatCalculations_loc3, echo=FALSE}
+barStatsLoc3 <- barData %>%
+  filter(!is.na(grazing_mm3cm2y)) %>%
+  #group_by(basin, loc1, loc2, loc1.2, loc3, latitude, longitude) %>% ##Note: grouping with lat/long is problematic since some Loc3 sites are marginally different lat/long
+  group_by(basin, loc1, loc2, loc1.2, loc3) %>%
+  summarise(
+    # duration
+    maxDays = max(daysDeployed, na.rm = TRUE),
+    minDays = min(daysDeployed, na.rm = TRUE),
+
+    # depth
+    maxDepth  = max(depth, na.rm = TRUE),
+    minDepth  = min(depth, na.rm = TRUE),
+    meanDepth = mean(depth, na.rm = TRUE),
+
+    # deltaMass_mgcm2y
+    meanDeltaMass_mgcm2y  = mean(deltaMass_mgcm2y, na.rm = TRUE),
+    countDeltaMass_mgcm2y = sum(!is.na(deltaMass_mgcm2y)),
+    sdDeltaMass_mgcm2y    = sd(deltaMass_mgcm2y, na.rm = TRUE),
+    seDeltaMass_mgcm2y    = sdDeltaMass_mgcm2y / sqrt(countDeltaMass_mgcm2y),
+
+    # deltaMass_kgm2y
+    meanDeltaMass_kgm2y  = mean(deltaMass_kgm2y, na.rm = TRUE),
+    countDeltaMass_kgm2y = sum(!is.na(deltaMass_kgm2y)),
+    sdDeltaMass_kgm2y    = sd(deltaMass_kgm2y, na.rm = TRUE),
+    seDeltaMass_kgm2y    = sdDeltaMass_kgm2y / sqrt(countDeltaMass_kgm2y),    
+      
+    # deltaVolume
+    meanDeltaVolume  = mean(deltaVolume_mm3cm2y, na.rm = TRUE),
+    countDeltaVolume = sum(!is.na(deltaVolume_mm3cm2y)),
+    sdDeltaVolume    = sd(deltaVolume_mm3cm2y, na.rm = TRUE),
+    seDeltaVolume    = sdDeltaVolume / sqrt(countDeltaVolume),
+  
+    # deltaDensity
+    meanDeltaDensity  = mean(deltaDensity_mgcm3cm2y, na.rm = TRUE),
+    countDeltaDensity = sum(!is.na(deltaDensity_mgcm3cm2y)),
+    sdDeltaDensity    = sd(deltaDensity_mgcm3cm2y, na.rm = TRUE),
+    seDeltaDensity    = sdDeltaDensity / sqrt(countDeltaDensity),
+  
+    # macroboring
+    meanMacroboring  = mean(macroboring_mm3cm2y, na.rm = TRUE),
+    countMacroboring = sum(!is.na(macroboring_mm3cm2y)),
+    sdMacroboring    = sd(macroboring_mm3cm2y, na.rm = TRUE),
+    seMacroboring    = sdMacroboring / sqrt(countMacroboring),
+  
+    # accretion
+    meanAccretion  = mean(accretion_mm3cm2y, na.rm = TRUE),
+    countAccretion = sum(!is.na(accretion_mm3cm2y)),
+    sdAccretion    = sd(accretion_mm3cm2y, na.rm = TRUE),
+    seAccretion    = sdAccretion / sqrt(countAccretion),
+    
+    # grazing
+    meanGrazing  = mean(grazing_mm3cm2y, na.rm = TRUE),
+    countGrazing = sum(!is.na(grazing_mm3cm2y)),
+    sdGrazing    = sd(grazing_mm3cm2y, na.rm = TRUE),
+    seGrazing    = sdGrazing / sqrt(countGrazing),
+
+  
+    .groups = "drop"
+  )
+
+kbl(barStatsLoc3, align = "l") %>%
+  kable_classic(full_width = FALSE, html_font = "Cambria") %>%
+  add_header_above(c(
+    "location"     = 4,
+    "duration"     = 3,  # maxDays, minDays, n
+    "depth"        = 3,
+    "deltaMass_mgcm2yr"= 4,
+    "deltaMass_kgm2y"= 4,
+    "deltaVolume"  = 4,
+    "deltaDensity" = 4,
+    "macroboring"  = 4,
+    "accretion"    = 4,
+    "grazing"      = 4
+  )) %>%
+  scroll_box(width = "1000px", height = "500px")
+```
+
+
+## Parrot fish community
+### Summary
+```{r, include=FALSE}
+nParrotSurveys <- nrow(parrotData)
+nParrotLoc1 <-length(unique(parrotData$loc1))
+listParrotLoc1 <-unique(parrotData$loc1)
+nParrotLoc2 <-length(unique(parrotData$loc2))
+listParrotLoc2 <-unique(parrotData$loc2)
+nParrotLoc3 <-length(unique(parrotData$loc3))
+```
+
+There are a total of `r nParrotSurveys` parrot surveys included in this study. Sites are divided at three levels across 2 basins. The highest level (loc1) includes `r nParrotLoc1` large regions including:  
+<small>`r listParrotLoc1`</small>  
+
+### Unify parrot tables and calculate stats at loc3 level
+```{r unifyParrotTablesLoc3, echo=FALSE}
+
+# ---------- Clean & standardize ----------
+parrotData_clean <- parrotData %>%
+  mutate(
+    across(c(basin, loc1, loc2, loc3), ~ .x |> as.character() |> stringr::str_squish()),
+    `loc1.2` = if_else(is.na(loc2) | loc2 == "", loc1, paste0(loc1, ".", loc2)) |>
+      stringr::str_squish()
+  )
+
+# ---------- Community summary (means/SDs + N) ----------
+parrot_loc3_summary <- parrotData_clean %>%
+  group_by(basin, loc1, loc2, `loc1.2`, loc3) %>%
+  summarise(
+    # Community
+    comm_density_mean    = mean(totalDensity,  na.rm = TRUE),
+    comm_density_sd      = sd(totalDensity,    na.rm = TRUE),
+    comm_density_n       = sum(!is.na(totalDensity)),
+    comm_biomass_mean    = mean(totalBiomass,  na.rm = TRUE),
+    comm_biomass_sd      = sd(totalBiomass,    na.rm = TRUE),
+    comm_biomass_n       = sum(!is.na(totalBiomass)),
+    comm_bioerosion_mean = mean(totalBioerosion, na.rm = TRUE),
+    comm_bioerosion_sd   = sd(totalBioerosion,   na.rm = TRUE),
+    comm_bioerosion_n    = sum(!is.na(totalBioerosion)),
+
+    # Scraper
+    scraper_density_mean    = mean(scraperDensity,  na.rm = TRUE),
+    scraper_density_sd      = sd(scraperDensity,    na.rm = TRUE),
+    scraper_density_n       = sum(!is.na(scraperDensity)),
+    scraper_biomass_mean    = mean(scraperBiomass,  na.rm = TRUE),
+    scraper_biomass_sd      = sd(scraperBiomass,    na.rm = TRUE),
+    scraper_biomass_n       = sum(!is.na(scraperBiomass)),
+    scraper_bioerosion_mean = mean(scraperBioerosion, na.rm = TRUE),
+    scraper_bioerosion_sd   = sd(scraperBioerosion,   na.rm = TRUE),
+    scraper_bioerosion_n    = sum(!is.na(scraperBioerosion)),
+
+    # Excavator
+    excavator_density_mean    = mean(excavatorDensity,  na.rm = TRUE),
+    excavator_density_sd      = sd(excavatorDensity,    na.rm = TRUE),
+    excavator_density_n       = sum(!is.na(excavatorDensity)),
+    excavator_biomass_mean    = mean(excavatorBiomass,  na.rm = TRUE),
+    excavator_biomass_sd      = sd(excavatorBiomass,    na.rm = TRUE),
+    excavator_biomass_n       = sum(!is.na(excavatorBiomass)),
+    excavator_bioerosion_mean = mean(excavatorBioerosion, na.rm = TRUE),
+    excavator_bioerosion_sd   = sd(excavatorBioerosion,   na.rm = TRUE),
+    excavator_bioerosion_n    = sum(!is.na(excavatorBioerosion)),
+
+    .groups = "drop"
+  )
+
+# ---------- Order columns to match headers ----------
+id_cols <- c("basin","loc1","loc2","loc1.2","loc3")
+metric_order <- c(
+  # Community
+  "comm_density_mean","comm_density_sd","comm_density_n",
+  "comm_biomass_mean","comm_biomass_sd","comm_biomass_n",
+  "comm_bioerosion_mean","comm_bioerosion_sd","comm_bioerosion_n",
+  # Scrapers
+  "scraper_density_mean","scraper_density_sd","scraper_density_n",
+  "scraper_biomass_mean","scraper_biomass_sd","scraper_biomass_n",
+  "scraper_bioerosion_mean","scraper_bioerosion_sd","scraper_bioerosion_n",
+  # Excavators
+  "excavator_density_mean","excavator_density_sd","excavator_density_n",
+  "excavator_biomass_mean","excavator_biomass_sd","excavator_biomass_n",
+  "excavator_bioerosion_mean","excavator_bioerosion_sd","excavator_bioerosion_n"
+)
+
+display_tbl <- parrot_loc3_summary %>%
+  select(all_of(id_cols), any_of(metric_order)) %>%
+  mutate(
+    # Density & biomass mean/sd → 1 decimal (all groups)
+    across(matches("^(comm|scraper|excavator)_(density|biomass)_(mean|sd)$"), ~ round(., 1)),
+    # Bioerosion mean/sd → 2 decimals (all groups)
+    across(matches("^(comm|scraper|excavator)_bioerosion_(mean|sd)$"), ~ round(., 2)),
+    # N as integers
+    across(matches("_n$"), ~ as.integer(.))
+  )
+
+# ---------- Alignment (auto) ----------
+align_vec <- c(rep("l", length(id_cols)), rep("r", ncol(display_tbl) - length(id_cols)))
+
+# ---------- Headers ----------
+col_names <- c(
+  "Basin","Loc1","Loc2","Loc1.2","Loc3",
+  rep(c("Mean","SD","N"), 9)  # 9 metric blocks (3 groups × 3 metrics)
+)
+
+kableExtra::kbl(
+  display_tbl,
+  booktabs = TRUE,
+  align = align_vec,
+  col.names = col_names,
+  caption = "Parrot community & functional-group summary at loc3 (Mean, SD, N)."
+) %>%
+  kableExtra::add_header_above(
+    c(" " = 5,
+      "Density" = 3, "Biomass" = 3, "Bioerosion" = 3,       # Community
+      "Density" = 3, "Biomass" = 3, "Bioerosion" = 3,       # Scrapers
+      "Density" = 3, "Biomass" = 3, "Bioerosion" = 3),      # Excavators
+    bold = FALSE
+  ) %>%
+  kableExtra::add_header_above(
+    c(" " = 5, "Community" = 9, "Scrapers" = 9, "Excavators" = 9)
+  ) %>%
+  kableExtra::kable_styling(
+    full_width = FALSE,
+    position = "left",
+    font_size = 11,
+    bootstrap_options = c("striped","hover","condensed","responsive")
+  ) %>%
+  kableExtra::scroll_box(width = "100%", height = "520px")
+```
+### Unify parrot tables and calculate stats at loc2 level
+```{r unifyParrotTablesLoc2, echo=FALSE}
+
+# ---------- Loc2 summary (means/SDs + N) ----------
+parrot_loc2_summary <- parrotData_clean %>%
+  group_by(basin, loc1, loc2, `loc1.2`) %>%
+  summarise(
+    # Community
+    comm_density_mean    = mean(totalDensity,  na.rm = TRUE),
+    comm_density_sd      = sd(totalDensity,    na.rm = TRUE),
+    comm_density_n       = sum(!is.na(totalDensity)),
+    comm_biomass_mean    = mean(totalBiomass,  na.rm = TRUE),
+    comm_biomass_sd      = sd(totalBiomass,    na.rm = TRUE),
+    comm_biomass_n       = sum(!is.na(totalBiomass)),
+    comm_bioerosion_mean = mean(totalBioerosion, na.rm = TRUE),
+    comm_bioerosion_sd   = sd(totalBioerosion,   na.rm = TRUE),
+    comm_bioerosion_n    = sum(!is.na(totalBioerosion)),
+
+    # Scraper
+    scraper_density_mean    = mean(scraperDensity,  na.rm = TRUE),
+    scraper_density_sd      = sd(scraperDensity,    na.rm = TRUE),
+    scraper_density_n       = sum(!is.na(scraperDensity)),
+    scraper_biomass_mean    = mean(scraperBiomass,  na.rm = TRUE),
+    scraper_biomass_sd      = sd(scraperBiomass,    na.rm = TRUE),
+    scraper_biomass_n       = sum(!is.na(scraperBiomass)),
+    scraper_bioerosion_mean = mean(scraperBioerosion, na.rm = TRUE),
+    scraper_bioerosion_sd   = sd(scraperBioerosion,   na.rm = TRUE),
+    scraper_bioerosion_n    = sum(!is.na(scraperBioerosion)),
+
+    # Excavator
+    excavator_density_mean    = mean(excavatorDensity,  na.rm = TRUE),
+    excavator_density_sd      = sd(excavatorDensity,    na.rm = TRUE),
+    excavator_density_n       = sum(!is.na(excavatorDensity)),
+    excavator_biomass_mean    = mean(excavatorBiomass,  na.rm = TRUE),
+    excavator_biomass_sd      = sd(excavatorBiomass,    na.rm = TRUE),
+    excavator_biomass_n       = sum(!is.na(excavatorBiomass)),
+    excavator_bioerosion_mean = mean(excavatorBioerosion, na.rm = TRUE),
+    excavator_bioerosion_sd   = sd(excavatorBioerosion,   na.rm = TRUE),
+    excavator_bioerosion_n    = sum(!is.na(excavatorBioerosion)),
+
+    .groups = "drop"
+  )
+
+# ---------- Order columns to match headers ----------
+id_cols <- c("basin","loc1","loc2","loc1.2")
+
+metric_order <- c(
+  # Community
+  "comm_density_mean","comm_density_sd","comm_density_n",
+  "comm_biomass_mean","comm_biomass_sd","comm_biomass_n",
+  "comm_bioerosion_mean","comm_bioerosion_sd","comm_bioerosion_n",
+  # Scrapers
+  "scraper_density_mean","scraper_density_sd","scraper_density_n",
+  "scraper_biomass_mean","scraper_biomass_sd","scraper_biomass_n",
+  "scraper_bioerosion_mean","scraper_bioerosion_sd","scraper_bioerosion_n",
+  # Excavators
+  "excavator_density_mean","excavator_density_sd","excavator_density_n",
+  "excavator_biomass_mean","excavator_biomass_sd","excavator_biomass_n",
+  "excavator_bioerosion_mean","excavator_bioerosion_sd","excavator_bioerosion_n"
+)
+
+display_tbl <- parrot_loc2_summary %>%
+  select(all_of(id_cols), any_of(metric_order)) %>%
+  mutate(
+    # Density & biomass mean/sd → 1 decimal (all groups)
+    across(matches("^(comm|scraper|excavator)_(density|biomass)_(mean|sd)$"), ~ round(., 1)),
+    # Bioerosion mean/sd → 2 decimals (all groups)
+    across(matches("^(comm|scraper|excavator)_bioerosion_(mean|sd)$"), ~ round(., 2)),
+    # N as integers
+    across(matches("_n$"), ~ as.integer(.))
+  )
+
+# ---------- Alignment (auto) ----------
+align_vec <- c(rep("l", length(id_cols)), rep("r", ncol(display_tbl) - length(id_cols)))
+
+# ---------- Column names ----------
+col_names <- c(
+  "Basin","Loc1","Loc2","Loc1.2",
+  rep(c("Mean","SD","N"), 9)  # 9 metric blocks (3 groups × 3 metrics)
+)
+
+kableExtra::kbl(
+  display_tbl,
+  booktabs = TRUE,
+  align = align_vec,
+  col.names = col_names,
+  caption = "Parrot community & functional-group summary at loc2 (Mean, SD, N)."
+) %>%
+  kableExtra::add_header_above(
+    c(" " = 4,
+      "Density" = 3, "Biomass" = 3, "Bioerosion" = 3,       # Community
+      "Density" = 3, "Biomass" = 3, "Bioerosion" = 3,       # Scrapers
+      "Density" = 3, "Biomass" = 3, "Bioerosion" = 3),      # Excavators
+    bold = FALSE
+  ) %>%
+  kableExtra::add_header_above(
+    c(" " = 4, "Community" = 9, "Scrapers" = 9, "Excavators" = 9)
+  ) %>%
+  kableExtra::kable_styling(
+    full_width = FALSE,
+    position = "left",
+    font_size = 11,
+    bootstrap_options = c("striped","hover","condensed","responsive")
+  ) %>%
+  kableExtra::scroll_box(width = "100%", height = "520px")
+```
+
+
+
+## Environmental data
+
+### Summary statistics for loc2 and loc3 sites
+
+```{r environmental_stats_loc2_loc3, echo=FALSE, message=FALSE, warning=FALSE}
+
+# Clean environmental variables once
+environmentalData_clean <- environmentalData %>%
+  mutate(
+    mean_Sea_Surface_Temperature_CRW_daily_01mo = as.numeric(mean_Sea_Surface_Temperature_CRW_daily_01mo),
+    mean_Sea_Surface_Salinity_MirasSMOS_3Day_03mo = as.numeric(mean_Sea_Surface_Salinity_MirasSMOS_3Day_03mo),
+    mean_PAR_NASA_VIIRS_monthly_01mo = as.numeric(mean_PAR_NASA_VIIRS_monthly_01mo),
+    mean_Chlorophyll_A_ESA_OC_CCI_v6.0_monthly_01mo = as.numeric(mean_Chlorophyll_A_ESA_OC_CCI_v6.0_monthly_01mo)
+  ) %>%
+  filter(!is.na(mean_Sea_Surface_Salinity_MirasSMOS_3Day_03mo)) %>%
+  filter(!is.na(mean_PAR_NASA_VIIRS_monthly_01mo)) %>%
+  filter(!is.na(mean_Chlorophyll_A_ESA_OC_CCI_v6.0_monthly_01mo))
+
+# Summary by loc2
+environmentalStats_loc2 <- environmentalData_clean %>%
+  group_by(basin, loc1, loc2) %>%
+  summarise(
+    maxDate = max(date, na.rm = TRUE),
+    minDate = min(date, na.rm = TRUE),
+    n = n(),
+
+    maxTemperature = max(mean_Sea_Surface_Temperature_CRW_daily_01mo, na.rm = TRUE),
+    minTemperature = min(mean_Sea_Surface_Temperature_CRW_daily_01mo, na.rm = TRUE),
+    meanTemperature = mean(mean_Sea_Surface_Temperature_CRW_daily_01mo, na.rm = TRUE),
+
+    maxSalinity = max(mean_Sea_Surface_Salinity_MirasSMOS_3Day_03mo, na.rm = TRUE),
+    minSalinity = min(mean_Sea_Surface_Salinity_MirasSMOS_3Day_03mo, na.rm = TRUE),
+    meanSalinity = mean(mean_Sea_Surface_Salinity_MirasSMOS_3Day_03mo, na.rm = TRUE),
+
+    maxPAR = max(mean_PAR_NASA_VIIRS_monthly_01mo, na.rm = TRUE),
+    minPAR = min(mean_PAR_NASA_VIIRS_monthly_01mo, na.rm = TRUE),
+    meanPAR = mean(mean_PAR_NASA_VIIRS_monthly_01mo, na.rm = TRUE),
+
+    maxChlorophyll = max(mean_Chlorophyll_A_ESA_OC_CCI_v6.0_monthly_01mo, na.rm = TRUE),
+    minChlorophyll = min(mean_Chlorophyll_A_ESA_OC_CCI_v6.0_monthly_01mo, na.rm = TRUE),
+    meanChlorophyll = mean(mean_Chlorophyll_A_ESA_OC_CCI_v6.0_monthly_01mo, na.rm = TRUE),
+
+    .groups = "drop"
+  )
+
+# Summary by loc3
+environmentalStats_loc3 <- environmentalData_clean %>%
+  group_by(basin, loc1, loc2, loc1.2, loc3, lat, lon) %>%
+  summarise(
+    maxDate = max(date, na.rm = TRUE),
+    minDate = min(date, na.rm = TRUE),
+    n = n(),
+
+    maxTemperature = max(mean_Sea_Surface_Temperature_CRW_daily_01mo, na.rm = TRUE),
+    minTemperature = min(mean_Sea_Surface_Temperature_CRW_daily_01mo, na.rm = TRUE),
+    meanTemperature = mean(mean_Sea_Surface_Temperature_CRW_daily_01mo, na.rm = TRUE),
+
+    maxSalinity = max(mean_Sea_Surface_Salinity_MirasSMOS_3Day_03mo, na.rm = TRUE),
+    minSalinity = min(mean_Sea_Surface_Salinity_MirasSMOS_3Day_03mo, na.rm = TRUE),
+    meanSalinity = mean(mean_Sea_Surface_Salinity_MirasSMOS_3Day_03mo, na.rm = TRUE),
+
+    maxPAR = max(mean_PAR_NASA_VIIRS_monthly_01mo, na.rm = TRUE),
+    minPAR = min(mean_PAR_NASA_VIIRS_monthly_01mo, na.rm = TRUE),
+    meanPAR = mean(mean_PAR_NASA_VIIRS_monthly_01mo, na.rm = TRUE),
+
+    maxChlorophyll = max(mean_Chlorophyll_A_ESA_OC_CCI_v6.0_monthly_01mo, na.rm = TRUE),
+    minChlorophyll = min(mean_Chlorophyll_A_ESA_OC_CCI_v6.0_monthly_01mo, na.rm = TRUE),
+    meanChlorophyll = mean(mean_Chlorophyll_A_ESA_OC_CCI_v6.0_monthly_01mo, na.rm = TRUE),
+
+    .groups = "drop"
+  )
+
+# Display loc2 table
+kbl(
+  environmentalStats_loc2,
+  caption = "Environmental summary statistics by loc2"
+) %>%
+  kable_classic(full_width = FALSE, html_font = "Cambria") %>%
+  scroll_box(height = "500px")
+
+# Display loc3 table
+kbl(
+  environmentalStats_loc3,
+  caption = "Environmental summary statistics by loc3"
+) %>%
+  kable_classic(full_width = FALSE, html_font = "Cambria") %>%
+  scroll_box(height = "500px")
+```
+
+### AragSatState by loc2
+```{r aragSatStateLoc2Summary, echo=FALSE}
+
+# Load bottle data
+bottle_dir <- file.path(rootFolder, "data", "bottleData")
+bottleLoc2_path <- file.path(bottle_dir, "bottleData_BMUs_loc2.csv")
+
+bottleData_loc2 <- readr::read_csv(
+  bottleLoc2_path,
+  show_col_types = FALSE
+)
+
+# Summarize aragonite saturation state by loc2
+aragSatState_loc2 <- bottleData_loc2 %>%
+  dplyr::group_by(basin, loc1, loc2) %>%
+  dplyr::summarise(
+    n_bottle = sum(!is.na(AragSatState)),
+    mean_AragSatState = mean(AragSatState, na.rm = TRUE),
+    sd_AragSatState = sd(AragSatState, na.rm = TRUE),
+    se_AragSatState = sd_AragSatState / sqrt(n_bottle),
+    min_AragSatState = min(AragSatState, na.rm = TRUE),
+    max_AragSatState = max(AragSatState, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  dplyr::mutate(
+    dplyr::across(
+      where(is.numeric),
+      ~ dplyr::if_else(is.nan(.x) | is.infinite(.x), NA_real_, .x)
+    )
+  )
+
+# Display table
+aragSatState_loc2
+```
+
+
+
+
+
+
+## Urban influence data
+## Calculates distance to nearest city directly at the loc3 level.
+Note Loc2 is not done due to it being the average of multiple loc3 and therefore artificially not on a specific site
+```{r humanPressureProximityData_loc3, fig.width=12, fig.height=18, out.width="100%", echo=FALSE, message=FALSE, warning=FALSE}
+
+# Natural Earth city/populated-place layer
+cities <- ne_download(
+  scale = 10,
+  type = "populated_places",
+  category = "cultural",
+  returnclass = "sf"
+)
+
+# Helper function to add nearest city name and distance
+add_nearest_city <- function(dat) {
+  
+  dat_sf <- dat %>%
+    filter(!is.na(latitude), !is.na(longitude)) %>%
+    st_as_sf(
+      coords = c("longitude", "latitude"),
+      crs = 4326,
+      remove = FALSE
+    )
+  
+  nearest_city_idx <- st_nearest_feature(dat_sf, cities)
+  
+  dist_city_km <- as.numeric(
+    st_distance(
+      dat_sf,
+      cities[nearest_city_idx, ],
+      by_element = TRUE
+    )
+  ) / 1000
+  
+  dat_sf %>%
+    st_drop_geometry() %>%
+    mutate(
+      closest_city = cities$NAME[nearest_city_idx],
+      dist_city_km = dist_city_km
+    )
+}
+
+# Build one row per loc3 using mean loc3 coordinates
+loc3_points <- barData %>%
+  select(basin, loc1, loc2, loc3, latitude, longitude) %>%
+  filter(!is.na(latitude), !is.na(longitude)) %>%
+  group_by(basin, loc1, loc2, loc3) %>%
+  summarise(
+    latitude = mean(latitude, na.rm = TRUE),
+    longitude = mean(longitude, na.rm = TRUE),
+    n_bar_rows = n(),
+    n_unique_gps = n_distinct(paste(latitude, longitude)),
+    .groups = "drop"
+  )
+
+# Add nearest city directly to loc3 points
+humanStats_loc3 <- add_nearest_city(loc3_points) %>%
+  select(
+    basin, loc1, loc2, loc3,
+    latitude, longitude,
+    closest_city, dist_city_km,
+    n_bar_rows, n_unique_gps
+  ) %>%
+  arrange(basin, loc1, loc2, loc3)
+
+# Display loc3 closest city table
+humanStats_loc3 %>%
+  kbl(
+    digits = 2,
+    caption = "Closest city to each loc3 site"
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE
+  )
+```
+
+## Combine datasets
+Combine bar stats and parrot community stats tables
+```{r, echo=FALSE}
+ combinedTableLoc2 <- barStatsLoc2 %>%
+  inner_join(
+    parrot_loc2_summary,
+    by = c("basin", "loc1", "loc2")
+  ) %>%
+  inner_join(
+    aragSatState_loc2,
+    by = c("basin", "loc1", "loc2")
+  ) %>%
+  inner_join(
+    environmentalStats_loc2,
+    by = c("basin", "loc1", "loc2")
+  )
+
+ combinedTableLoc3 <- barStatsLoc3 %>% #note that this table does not have the aragonite saturation state data because not appropriate to group at that level
+  inner_join(
+    parrot_loc3_summary,
+    by = c("basin", "loc1", "loc2", "loc3")
+  ) %>%
+  inner_join(
+    environmentalStats_loc3,
+    by = c("basin", "loc1", "loc2", "loc3")
+  ) %>%
+  inner_join(
+    humanStats_loc3,
+    by = c("basin", "loc1", "loc2", "loc3")
+  )
+```
+
+
+
+# Run linear models for Loc3 site-level analysis 
+## Check collinearity among parrotfish grazing pressure, urban influence, and depth
+
+Guidelines for collinearity interpretation and predictor inclusion:
+< 0.5   Usually fine
+0.5–0.7 Moderate concern
+> 0.7   Too collinear for clean independent interpretation
+> 0.8   Strong collinearity; avoid interpreting both independently
+Strong correlation in the Atlantic; no strong correlation in the Pacific
+
+```{r loc3_predictor_collinearity_plots, echo=FALSE, message=FALSE, warning=FALSE}
+# Build loc3 predictor dataset
+loc3_predictor_dat <- combinedTableLoc3 %>%
+  select(
+    basin, loc1, loc2, loc3,
+    comm_bioerosion_mean,
+    dist_city_km,
+    meanDepth
+  ) %>%
+  rename(
+    `Parrotfish grazing pressure` = comm_bioerosion_mean,
+    `Urban influence` = dist_city_km,
+    Depth = meanDepth
+  ) %>%
+  filter(
+    !is.na(`Parrotfish grazing pressure`),
+    !is.na(`Urban influence`),
+    !is.na(Depth)
+  )
+
+# Define pairwise predictor comparisons
+pairwise_collinearity_dat <- bind_rows(
+  loc3_predictor_dat %>%
+    transmute(
+      basin, loc1, loc2, loc3,
+      comparison = "Parrotfish grazing pressure vs. urban influence",
+      x_var = "Urban influence",
+      y_var = "Parrotfish grazing pressure",
+      x = `Urban influence`,
+      y = `Parrotfish grazing pressure`
+    ),
+  
+  loc3_predictor_dat %>%
+    transmute(
+      basin, loc1, loc2, loc3,
+      comparison = "Parrotfish grazing pressure vs. depth",
+      x_var = "Depth",
+      y_var = "Parrotfish grazing pressure",
+      x = Depth,
+      y = `Parrotfish grazing pressure`
+    ),
+  
+  loc3_predictor_dat %>%
+    transmute(
+      basin, loc1, loc2, loc3,
+      comparison = "Urban influence vs. depth",
+      x_var = "Depth",
+      y_var = "Urban influence",
+      x = Depth,
+      y = `Urban influence`
+    )
+)
+
+# Correlation table by basin and predictor pair
+loc3_collinearity_cor <- pairwise_collinearity_dat %>%
+  group_by(basin, comparison) %>%
+  summarise(
+    n_loc3 = n(),
+    correlation = cor(x, y, use = "complete.obs"),
+    p.value = cor.test(x, y)$p.value,
+    .groups = "drop"
+  ) %>%
+  mutate(
+    abs_correlation = abs(correlation),
+    collinearity_flag = case_when(
+      abs_correlation >= 0.8 ~ "Very high",
+      abs_correlation >= 0.7 ~ "High",
+      abs_correlation >= 0.5 ~ "Moderate",
+      TRUE ~ "Low"
+    ),
+    label = paste0(
+      "r = ", round(correlation, 3),
+      "\np = ", signif(p.value, 3),
+      "\nn = ", n_loc3
+    )
+  )
+
+# Display correlation table
+loc3_collinearity_cor %>%
+  select(
+    basin, comparison,
+    n_loc3,
+    correlation,
+    p.value,
+    collinearity_flag
+  ) %>%
+  kbl(
+    digits = 3,
+    caption = "Pairwise correlations among loc3-level predictors: parrotfish grazing pressure, urban influence, and depth"
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE
+  )
+
+# Combined plot: one row per predictor comparison, one column per basin
+ggplot(
+  pairwise_collinearity_dat,
+  aes(x = x, y = y, color = basin)
+) +
+  geom_point(size = 3) +
+  geom_smooth(method = "lm", se = TRUE) +
+  facet_grid(comparison ~ basin, scales = "free") +
+  geom_text(
+    data = loc3_collinearity_cor,
+    aes(x = -Inf, y = Inf, label = label),
+    inherit.aes = FALSE,
+    hjust = -0.1,
+    vjust = 1.1,
+    size = 3.5
+  ) +
+  labs(
+    x = NULL,
+    y = NULL,
+    title = "Loc3-level collinearity among model predictors",
+    subtitle = "Pairwise relationships among parrotfish grazing pressure, urban influence, and depth"
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(face = "bold"),
+    plot.title = element_text(face = "bold")
+  )
+```
+
+## Analyze response variables at the loc3 level 
+ Loc3-level analysis using existing combinedTableLoc3
+ Each loc3 row is one statistical replicate.
+
+ Separate models are run for Atlantic and Pacific.
+ Atlantic: response ~ parrotfish bioerosion only
+ Pacific:  response ~ parrotfish bioerosion + distance to city + depth
+```{r combinedTableLoc3_basin_specific_models, echo=FALSE, message=FALSE, warning=FALSE}
+# Define loc3-level BAR response variables in combinedTableLoc3
+response_vars_loc3 <- c(
+  "meanDeltaMass_mgcm2y",
+  "meanDeltaVolume",
+  "meanDeltaDensity",
+  "meanMacroboring",
+  "meanAccretion",
+  "meanGrazing"
+)
+
+# Build model data
+loc3_model_long <- combinedTableLoc3 %>%
+  select(
+    basin, loc1, loc2, loc3,
+    comm_bioerosion_mean,
+    dist_city_km,
+    meanDepth,
+    all_of(response_vars_loc3)
+  ) %>%
+  pivot_longer(
+    cols = all_of(response_vars_loc3),
+    names_to = "response",
+    values_to = "mean_response"
+  ) %>%
+  filter(
+    basin %in% c("atlantic", "pacific"),
+    !is.na(mean_response),
+    !is.na(comm_bioerosion_mean)
+  )
+
+# Function to apply basin-specific NA filtering
+filter_model_data <- function(dat, loc3ModelBasin) {
+  if (loc3ModelBasin == "atlantic") {
+    dat %>%
+      filter(!is.na(comm_bioerosion_mean))
+  } else if (loc3ModelBasin == "pacific") {
+    dat %>%
+      filter(
+        !is.na(comm_bioerosion_mean),
+        !is.na(dist_city_km),
+        !is.na(meanDepth)
+      )
+  } else {
+    stop("Unexpected basin name: ", loc3ModelBasin)
+  }
+}
+
+# Function to fit basin-specific loc3-level models
+# Atlantic: response ~ parrotfish bioerosion only
+# Pacific:  response ~ parrotfish bioerosion + distance to city + depth
+fit_loc3_lm <- function(dat, loc3ModelBasin) {
+  if (loc3ModelBasin == "atlantic") {
+    lm(
+      mean_response ~ comm_bioerosion_mean,
+      data = dat
+    )
+  } else if (loc3ModelBasin == "pacific") {
+    lm(
+      mean_response ~ comm_bioerosion_mean + dist_city_km + meanDepth,
+      data = dat
+    )
+  } else {
+    stop("Unexpected basin name: ", loc3ModelBasin)
+  }
+}
+
+# Function to extract model coefficients and model fit statistics
+extract_lm_effects <- function(dat, loc3ModelBasin) {
+  model_summary <- summary(fit_loc3_lm(dat, loc3ModelBasin))
+
+  as.data.frame(model_summary$coefficients) %>%
+    rownames_to_column("term") %>%
+    as_tibble() %>%
+    mutate(
+      r_squared = model_summary$r.squared,
+      adj_r_squared = model_summary$adj.r.squared
+    )
+}
+
+# Fit models and create full coefficient table
+full_model_effects <- loc3_model_long %>%
+  group_by(basin, response) %>%
+  nest() %>%
+  mutate(
+    model_data = map2(data, basin, filter_model_data),
+    n_loc3 = map_int(model_data, nrow),
+    n_loc2 = map_int(model_data, ~ n_distinct(.x$loc2)),
+    n_loc1 = map_int(model_data, ~ n_distinct(.x$loc1)),
+    coef_table = map2(model_data, basin, extract_lm_effects)
+  ) %>%
+  select(
+    basin, response,
+    n_loc3, n_loc2, n_loc1,
+    coef_table
+  ) %>%
+  unnest(coef_table) %>%
+  rename(
+    estimate  = Estimate,
+    std.error = `Std. Error`,
+    statistic = `t value`,
+    p.value   = `Pr(>|t|)`
+  ) %>%
+  select(
+    basin, response,
+    n_loc3, n_loc2, n_loc1,
+    r_squared, adj_r_squared,
+    term, estimate, std.error, statistic, p.value
+  ) %>%
+  arrange(response, basin, term) %>%
+  ungroup()
+
+# Table 1: full model effects
+full_model_effects %>%
+  select(
+    response, basin,
+    n_loc3, n_loc2, n_loc1,
+    r_squared, adj_r_squared,
+    term, estimate, std.error, statistic, p.value
+  ) %>%
+  arrange(response, basin, term) %>%
+  kbl(
+    digits = 4,
+    caption = "Full loc3-level model coefficient table using combinedTableLoc3. Atlantic models include parrotfish grazing pressure only. Pacific models include parrotfish grazing pressure, urban influence, and depth."
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE
+  ) %>%
+  collapse_rows(
+    columns = 1,
+    valign = "top",
+    latex_hline = "major"
+  ) %>%
+  scroll_box(height = "500px", width = "100%")
+
+
+# Table 2: organized summary table
+organized_model_table <- full_model_effects %>%
+  filter(term != "(Intercept)") %>%
+  mutate(
+    term_clean = case_when(
+      term == "comm_bioerosion_mean" ~ "Grazing pressure",
+      term == "dist_city_km" ~ "Urban influence",
+      term == "meanDepth" ~ "Depth",
+      TRUE ~ term
+    ),
+    estimate_p = paste0(
+      round(estimate, 3),
+      " (p = ",
+      signif(p.value, 3),
+      ")"
+    ),
+    estimate_p = if_else(
+      p.value < 0.05,
+      paste0("<strong>", estimate_p, "</strong>"),
+      estimate_p
+    )
+  ) %>%
+  select(
+    response, basin,
+    n_loc3, n_loc2, n_loc1,
+    r_squared, adj_r_squared,
+    term_clean, estimate_p
+  ) %>%
+  pivot_wider(
+    names_from = term_clean,
+    values_from = estimate_p
+  ) %>%
+  arrange(response, basin)
+
+organized_model_table %>%
+  kbl(
+    escape = FALSE,
+    digits = 4,
+    caption = "Summary of basin-specific loc3-level linear models. Values are coefficient estimates with p-values. Bold values indicate p < 0.05. Atlantic models include parrotfish grazing pressure only. Pacific models include parrotfish grazing pressure, urban influence, and depth.",
+    align = "l"
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE
+  ) %>%
+  collapse_rows(
+    columns = 1,
+    valign = "top",
+    latex_hline = "major"
+  )
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Run linear models for Loc2 site-level analysis 
+Linear models were used in each basin to investigate the impact of aragonite saturation state on BAR responses. Models were run on loc2-averaged values, with depth and chlorophyll included as covariates. After depth and chlorophyll were accounted for, omega relationships were evaluated separately for each response variable and basin.
+
+Note sites like St. Thomas and Wake with no density are not included in the analysis only of those parameters, as listed with NAs.
+
+This is what ChatGPT told me about removing depth (don't use):
+"Depth was not a predictor of interest, it did not improve interpretation, and including it costs degrees of freedom in a small loc2-level dataset."
+
+
+##Are predictors collinear
+```{r loc2_environmental_predictor_collinearity_plots, echo=FALSE, message=FALSE, warning=FALSE}
+# Build loc2 predictor dataset
+loc2_predictor_dat <- combinedTableLoc2 %>%
+  select(
+    basin, loc1, loc2,
+    meanChlorophyll,
+    meanTemperature,
+    meanDepth,
+    mean_AragSatState
+  ) %>%
+  rename(
+    Chlorophyll = meanChlorophyll,
+    Temperature = meanTemperature,
+    Depth = meanDepth,
+    Omega = mean_AragSatState
+  ) %>%
+  filter(
+    !is.na(Chlorophyll),
+    !is.na(Temperature),
+    !is.na(Depth),
+    !is.na(Omega)
+  )
+
+# Define pairwise predictor comparisons
+pairwise_collinearity_dat <- bind_rows(
+  loc2_predictor_dat %>%
+    transmute(
+      basin, loc1, loc2,
+      comparison = "Omega vs. Chlorophyll",
+      x_var = "Chlorophyll",
+      y_var = "Omega",
+      x = Chlorophyll,
+      y = Omega
+    ),
+  
+  loc2_predictor_dat %>%
+    transmute(
+      basin, loc1, loc2,
+      comparison = "Omega vs. Temperature",
+      x_var = "Temperature",
+      y_var = "Omega",
+      x = Temperature,
+      y = Omega
+    ),
+  
+  loc2_predictor_dat %>%
+    transmute(
+      basin, loc1, loc2,
+      comparison = "Omega vs. Depth",
+      x_var = "Depth",
+      y_var = "Omega",
+      x = Depth,
+      y = Omega
+    ),
+  
+  loc2_predictor_dat %>%
+    transmute(
+      basin, loc1, loc2,
+      comparison = "Chlorophyll vs. Temperature",
+      x_var = "Temperature",
+      y_var = "Chlorophyll",
+      x = Temperature,
+      y = Chlorophyll
+    ),
+  
+  loc2_predictor_dat %>%
+    transmute(
+      basin, loc1, loc2,
+      comparison = "Chlorophyll vs. Depth",
+      x_var = "Depth",
+      y_var = "Chlorophyll",
+      x = Depth,
+      y = Chlorophyll
+    ),
+  
+  loc2_predictor_dat %>%
+    transmute(
+      basin, loc1, loc2,
+      comparison = "Temperature vs. Depth",
+      x_var = "Depth",
+      y_var = "Temperature",
+      x = Depth,
+      y = Temperature
+    )
+)
+
+# Correlation table by basin and predictor pair
+loc2_collinearity_cor <- pairwise_collinearity_dat %>%
+  group_by(basin, comparison) %>%
+  summarise(
+    n_loc2 = n(),
+    correlation = cor(x, y, use = "complete.obs"),
+    p.value = cor.test(x, y)$p.value,
+    .groups = "drop"
+  ) %>%
+  mutate(
+    abs_correlation = abs(correlation),
+    collinearity_flag = case_when(
+      abs_correlation >= 0.8 ~ "Very high",
+      abs_correlation >= 0.7 ~ "High",
+      abs_correlation >= 0.5 ~ "Moderate",
+      TRUE ~ "Low"
+    ),
+    label = paste0(
+      "r = ", round(correlation, 3),
+      "\np = ", signif(p.value, 3),
+      "\nn = ", n_loc2
+    )
+  )
+
+# Display correlation table
+loc2_collinearity_cor %>%
+  select(
+    basin, comparison,
+    n_loc2,
+    correlation,
+    p.value,
+    collinearity_flag
+  ) %>%
+  kbl(
+    digits = 3,
+    caption = "Pairwise correlations among loc2-level environmental predictors"
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE
+  )
+
+# Combined plot: one row per predictor comparison, one column per basin
+ggplot(
+  pairwise_collinearity_dat,
+  aes(x = x, y = y, color = basin)
+) +
+  geom_point(size = 3) +
+  geom_smooth(method = "lm", se = TRUE) +
+  facet_grid(comparison ~ basin, scales = "free") +
+  geom_text(
+    data = loc2_collinearity_cor,
+    aes(x = -Inf, y = Inf, label = label),
+    inherit.aes = FALSE,
+    hjust = -0.1,
+    vjust = 1.1,
+    size = 3.2
+  ) +
+  labs(
+    x = NULL,
+    y = NULL,
+    title = "Loc2-level collinearity among environmental model predictors",
+    subtitle = "Pairwise relationships among omega, chlorophyll, temperature, and depth"
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(face = "bold"),
+    plot.title = element_text(face = "bold")
+  )
+```
+
+## Analyze response variables at the loc2 level 
+```{r lmLoc2ByBasinChlorophyllOmegaDepth_cleanTables, echo=FALSE, message=FALSE, warning=FALSE}
+
+# Define loc2-level BAR response variables
+response_vars <- c(
+  "meanDeltaMass_mgcm2y",
+  "meanDeltaVolume",
+  "meanDeltaDensity",
+  "meanMacroboring",
+  "meanGrazing",
+  "meanAccretion"
+)
+
+# Put the data in long format where "response" is the name of the response variable
+# and "value" is the value of that response variable.
+model_dat_long <- combinedTableLoc2 %>%
+  select(
+    basin, loc1, loc2,
+    mean_AragSatState,
+    meanChlorophyll,
+    meanDepth,
+    all_of(response_vars)
+  ) %>%
+  pivot_longer(
+    cols = all_of(response_vars),
+    names_to = "response",
+    values_to = "value"
+  ) %>%
+  filter(
+    basin %in% c("atlantic", "pacific"),
+    !is.na(value),
+    !is.na(mean_AragSatState),
+    !is.na(meanChlorophyll)
+  )
+
+# Function to apply basin-specific NA filtering
+filter_model_data <- function(dat, loc2ModelBasin) {
+  if (loc2ModelBasin == "atlantic") {
+    dat %>%
+      filter(
+        !is.na(mean_AragSatState),
+        !is.na(meanChlorophyll)
+      )
+  } else if (loc2ModelBasin == "pacific") {
+    dat %>%
+      filter(
+        !is.na(mean_AragSatState),
+        !is.na(meanChlorophyll),
+        !is.na(meanDepth)
+      )
+  } else {
+    stop("Unexpected basin name: ", loc2ModelBasin)
+  }
+}
+
+# Function to fit basin-specific loc2-level models
+# Atlantic: response ~ omega + chlorophyll
+# Pacific:  response ~ omega + chlorophyll + depth
+fit_loc2_lm <- function(dat, loc2ModelBasin) {
+  if (loc2ModelBasin == "atlantic") {
+    lm(
+      value ~ mean_AragSatState + meanChlorophyll,
+      data = dat
+    )
+  } else if (loc2ModelBasin == "pacific") {
+    lm(
+      value ~ mean_AragSatState + meanChlorophyll + meanDepth,
+      data = dat
+    )
+  } else {
+    stop("Unexpected basin name: ", loc2ModelBasin)
+  }
+}
+
+# Function to extract model coefficients and model fit statistics
+extract_lm_effects <- function(dat, loc2ModelBasin) {
+  model_summary <- summary(fit_loc2_lm(dat, loc2ModelBasin))
+  
+  as.data.frame(model_summary$coefficients) %>%
+    rownames_to_column("term") %>%
+    as_tibble() %>%
+    mutate(
+      r_squared = model_summary$r.squared,
+      adj_r_squared = model_summary$adj.r.squared
+    )
+}
+
+# Fit models and create full coefficient table
+full_model_effects <- model_dat_long %>%
+  group_by(basin, response) %>%
+  nest() %>%
+  mutate(
+    model_data = map2(data, basin, filter_model_data),
+    n_loc2 = map_int(model_data, nrow),
+    n_loc1 = map_int(model_data, ~ n_distinct(.x$loc1)),
+    coef_table = map2(model_data, basin, extract_lm_effects)
+  ) %>%
+  select(
+    basin, response,
+    n_loc2, n_loc1,
+    coef_table
+  ) %>%
+  unnest(coef_table) %>%
+  rename(
+    estimate  = Estimate,
+    std.error = `Std. Error`,
+    statistic = `t value`,
+    p.value   = `Pr(>|t|)`
+  ) %>%
+  select(
+    response, basin,
+    n_loc2, n_loc1,
+    r_squared, adj_r_squared,
+    term, estimate, std.error, statistic, p.value
+  ) %>%
+  arrange(response, basin, term) %>%
+  ungroup()
+
+# Table 1: full model effects
+full_model_effects %>%
+  kbl(
+    digits = 4,
+    caption = "Full loc2-level model coefficient table using combinedTableLoc2. Atlantic models include omega and chlorophyll. Pacific models include omega, chlorophyll, and depth."
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE
+  ) %>%
+  collapse_rows(
+    columns = 1,
+    valign = "top",
+    latex_hline = "major"
+  ) %>%
+  scroll_box(height = "500px", width = "100%")
+
+# Table 2: organized model summary table
+organized_model_table <- full_model_effects %>%
+  filter(term != "(Intercept)") %>%
+  mutate(
+    term_clean = case_when(
+      term == "mean_AragSatState" ~ "Omega",
+      term == "meanChlorophyll" ~ "Chlorophyll",
+      term == "meanDepth" ~ "Depth",
+      TRUE ~ term
+    ),
+    estimate_p = paste0(
+      round(estimate, 3),
+      " (p = ",
+      signif(p.value, 3),
+      ")"
+    ),
+    estimate_p = if_else(
+      p.value < 0.05,
+      paste0("<strong>", estimate_p, "</strong>"),
+      estimate_p
+    )
+  ) %>%
+  select(
+    response, basin,
+    n_loc2, n_loc1,
+    r_squared, adj_r_squared,
+    term_clean, estimate_p
+  ) %>%
+  pivot_wider(
+    names_from = term_clean,
+    values_from = estimate_p
+  ) %>%
+  arrange(response, basin)
+
+organized_model_table %>%
+  kbl(
+    escape = FALSE,
+    digits = 4,
+    caption = "Summary of basin-specific loc2-level linear models. Values are coefficient estimates with p-values. Bold values indicate p < 0.05. Atlantic models include omega and chlorophyll. Pacific models include omega, chlorophyll, and depth.",
+    align = "l"
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE
+  ) %>%
+  collapse_rows(
+    columns = 1,
+    valign = "top",
+    latex_hline = "major"
+  )
+```
+
