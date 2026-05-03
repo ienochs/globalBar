@@ -1916,17 +1916,265 @@ Combine bar stats and parrot community stats tables
 
 
 
-# Run linear models for Loc3 site-level analysis 
-## Check collinearity among parrotfish grazing pressure, urban influence, and depth
 
-Guidelines for collinearity interpretation and predictor inclusion:
-< 0.5   Usually fine
-0.5–0.7 Moderate concern
-> 0.7   Too collinear for clean independent interpretation
-> 0.8   Strong collinearity; avoid interpreting both independently
-Strong correlation in the Atlantic; no strong correlation in the Pacific
+# Vertical dotplots for map by loc1 and loc2
+```{r dotplots_by_loc1_loc2_means, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+# ===== Metrics =====
+panel1_vars <- c(
+  "accretion_mm3cm2y",
+  "macroboring_mm3cm2y",
+  "grazing_mm3cm2y"
+)
 
-```{r loc3_predictor_collinearity_plots, echo=FALSE, message=FALSE, warning=FALSE}
+metric_labels <- c(
+  accretion_mm3cm2y   = "Accretion",
+  macroboring_mm3cm2y = "Macroboring",
+  grazing_mm3cm2y     = "Grazing"
+)
+
+volume_var <- "deltaVolume_mm3cm2y"
+
+metric_labels_full <- c(
+  metric_labels,
+  setNames("Total volume", volume_var)
+)
+
+# ===== GLOBAL SHARED X LIMITS =====
+shared_xlim <- range(
+  c(
+    barData$accretion_mm3cm2y,
+    barData$macroboring_mm3cm2y,
+    barData$grazing_mm3cm2y,
+    barData[[volume_var]]
+  ),
+  na.rm = TRUE
+)
+
+# ===== Metric colors =====
+metric_colors <- c(
+  "Accretion"    = "#2E8B57",
+  "Macroboring"  = "#E69F00",
+  "Grazing"      = "#C44E52",
+  "Total volume" = "#222222"
+)
+
+# Vertical offsets within each loc2 row
+offset_map <- c(
+  "Grazing"      = -0.15,
+  "Macroboring"  = -0.05,
+  "Accretion"    =  0.05,
+  "Total volume" =  0.15
+)
+
+# ===== Output folders =====
+out_dir <- "regionPlots_loc1_loc2"
+if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+
+img_dir <- file.path(out_dir, "report_imgs")
+if (!dir.exists(img_dir)) dir.create(img_dir, recursive = TRUE)
+
+# Base width and height scaling
+base_width <- 7              # inches
+base_height_for_three <- 7   # 3 loc2 -> height 7 in
+
+# ===== Loop over loc1 regions =====
+for (this_loc1 in sort(unique(barData$loc1))) {
+
+  df_loc1 <- barData %>%
+    dplyr::filter(loc1 == this_loc1)
+
+  if (nrow(df_loc1) == 0) next
+
+  # ---------- Long format, then summarise to loc2-level mean + SD ----------
+  df_long <- df_loc1 %>%
+    dplyr::select(loc2, dplyr::all_of(c(panel1_vars, volume_var))) %>%
+    tidyr::pivot_longer(
+      cols      = -loc2,
+      names_to  = "metric",
+      values_to = "value"
+    ) %>%
+    dplyr::group_by(loc2, metric) %>%
+    dplyr::summarise(
+      mean = mean(value, na.rm = TRUE),
+      sd   = sd(value,   na.rm = TRUE),
+      n    = sum(!is.na(value)),
+      .groups = "drop"
+    ) %>%
+    dplyr::filter(!is.na(mean))
+
+  if (nrow(df_long) == 0) next
+
+  # ---------- Metric labels & factor ordering ----------
+  df_long <- df_long %>%
+    dplyr::mutate(
+      metric_label = metric_labels_full[metric],
+      metric_label = factor(
+        metric_label,
+        levels = c("Accretion", "Macroboring", "Grazing", "Total volume")
+      )
+    )
+
+  # ---------- Base y positions for loc2 with custom ordering per loc1 ----------
+  loc2_levels <- sort(unique(df_long$loc2))
+
+  # Caribbean: Puerto Rico above SaintCroix
+  if (grepl("carib", this_loc1, ignore.case = TRUE)) {
+    idx_pr <- which(grepl("puerto", loc2_levels, ignore.case = TRUE))
+    idx_sc <- which(grepl("croix",  loc2_levels, ignore.case = TRUE))
+    if (length(idx_pr) == 1 && length(idx_sc) == 1 && idx_pr < idx_sc) {
+      tmp <- loc2_levels[idx_pr]
+      loc2_levels[idx_pr] <- loc2_levels[idx_sc]
+      loc2_levels[idx_sc] <- tmp
+    }
+  }
+
+  # Marianas: bottom → top = Guam, Saipan, Pagan, Maug
+  if (grepl("maria", this_loc1, ignore.case = TRUE)) {
+    desired <- c("Guam", "Saipan", "Pagan", "Maug")
+    match_one <- function(target) {
+      hit <- grepl(target, loc2_levels, ignore.case = TRUE)
+      loc2_levels[hit]
+    }
+    ordered_hits <- unlist(lapply(desired, match_one))
+    ordered_hits <- unique(ordered_hits)
+    others <- setdiff(loc2_levels, ordered_hits)
+    loc2_levels <- c(ordered_hits, others)
+  }
+
+  # Samoa: bottom → top = Tutuila, Tau, Ofu
+  if (grepl("samoa", this_loc1, ignore.case = TRUE)) {
+    desired <- c("Tutuila", "Tau", "Ofu")
+    match_one <- function(target) {
+      hit <- grepl(target, loc2_levels, ignore.case = TRUE)
+      loc2_levels[hit]
+    }
+    ordered_hits <- unlist(lapply(desired, match_one))
+    ordered_hits <- unique(ordered_hits)
+    others <- setdiff(loc2_levels, ordered_hits)
+    loc2_levels <- c(ordered_hits, others)
+  }
+
+  df_long <- df_long %>%
+    dplyr::mutate(
+      loc2_factor = factor(loc2, levels = loc2_levels),
+      y_base      = as.numeric(loc2_factor),
+      y_pos       = y_base + offset_map[as.character(metric_label)],
+      sd          = ifelse(is.na(sd), 0, sd)
+    )
+
+  # ---------- Pretty loc2 labels ----------
+  loc2_labels_pretty <- stringr::str_to_title(loc2_levels)
+
+  # ---------- Pretty loc1 title using explicit mapping ----------
+  loc1_pretty <- dplyr::recode(
+    this_loc1,
+    "caribbean"                = "Caribbean",
+    "florida"                  = "Florida",
+    "flowerGardenBanks"        = "Flower Garden Banks",
+    "marianas"                 = "Marianas",
+    "middleHawaiianIslands"    = "Middle Hawaiian Islands",
+    "northwestHawaiianIslands" = "Northwest Hawaiian Islands",
+    "pacificRemoteIslandArea"  = "Pacific Remote Island Area",
+    "samoa"                    = "American Samoa",
+    .default                   = this_loc1
+  )
+
+  # ---------- Plot ----------
+  p_loc1 <- ggplot2::ggplot(
+    df_long,
+    ggplot2::aes(x = mean, y = y_pos, color = metric_label)
+  ) +
+    ggplot2::geom_vline(xintercept = 0, linetype = "dashed", linewidth = 0.7) +
+    ggplot2::geom_errorbarh(
+      data = dplyr::filter(df_long, metric_label != "Total volume"),
+      ggplot2::aes(xmin = mean - sd, xmax = mean + sd, y = y_pos),
+      height = 0, linewidth = 0.8
+    ) +
+    ggplot2::geom_errorbarh(
+      data = dplyr::filter(df_long, metric_label == "Total volume"),
+      ggplot2::aes(xmin = mean - sd, xmax = mean + sd, y = y_pos),
+      height = 0.08, linewidth = 1.6
+    ) +
+    ggplot2::geom_point(
+      ggplot2::aes(size = ifelse(metric_label == "Total volume", 5.5, 3.8)),
+      alpha = 0.9
+    ) +
+    ggplot2::scale_color_manual(name = NULL, values = metric_colors) +
+    ggplot2::scale_size_identity() +
+    ggplot2::coord_cartesian(xlim = shared_xlim) +
+    ggplot2::scale_y_continuous(
+      breaks = seq_along(loc2_levels),
+      labels = loc2_labels_pretty
+    ) +
+    ggplot2::xlab(expression(Delta~volume~(mm^3~cm^{-2}~y^{-1}))) +
+    ggplot2::ylab(NULL) +
+    ggplot2::ggtitle(loc1_pretty) +
+    ggplot2::theme_minimal(base_size = 28) +
+    ggplot2::theme(
+      axis.text.x      = ggplot2::element_text(size = 24),
+      axis.text.y      = ggplot2::element_text(size = 22),
+      axis.title.x     = ggplot2::element_text(size = 28),
+      axis.title.y     = ggplot2::element_blank(),
+      plot.title       = ggplot2::element_text(size = 30, face = "bold", hjust = 0.5),
+      panel.grid.major = ggplot2::element_blank(),
+      panel.grid.minor = ggplot2::element_blank(),
+      panel.border     = ggplot2::element_rect(color = "black", fill = NA, linewidth = 0.8),
+      panel.background = ggplot2::element_rect(fill = "white", color = NA),
+      legend.position  = "none",
+      plot.margin      = ggplot2::margin(12, 12, 12, 12)
+    )
+
+  # ---------- Dynamic height based on number of loc2 ----------
+  n_loc2  <- length(loc2_levels)
+  out_hgt <- base_height_for_three * (n_loc2 / 3)
+
+  # Optional caps to prevent ridiculous tall/short figures
+  out_hgt <- max(out_hgt, 5)
+  out_hgt <- min(out_hgt, 16)
+
+  # ---------- Save PNG for report and include it (THIS is what makes heights vary) ----------
+  img_file <- file.path(img_dir, paste0("regionPlot_loc1_", this_loc1, ".png"))
+
+  ggplot2::ggsave(
+    filename = img_file,
+    plot     = p_loc1,
+    width    = base_width,
+    height   = out_hgt,
+    units    = "in",
+    dpi      = 200
+  )
+
+  # Include in knitted doc (width fixed; height varies via aspect ratio)
+  cat("\n\n")
+  cat(knitr::asis_output(paste0("![](", img_file, "){width=100%}\n\n")))
+  cat("\n\n")
+
+  # ---------- Save to PDF (your original artifact) ----------
+  out_pdf <- file.path(out_dir, paste0("regionPlot_loc1_", this_loc1, ".pdf"))
+  ggplot2::ggsave(
+    filename = out_pdf,
+    plot     = p_loc1,
+    width    = base_width,
+    height   = out_hgt,
+    units    = "in",
+    device   = cairo_pdf
+  )
+}
+```
+
+
+
+
+
+
+#Drivers of carbonate persistence:
+Data were analyzed using linear models. Separate models were constructed for each basin, at two spatial scales, island-level and site-level, depending on the spatial resolution of the predictor data. Response parameters (Δmass, Δvolume, Δdensity, accretion, grazing, and macroboring) were grouped at the appropriate scale, resulting in an island or site-specific mean, used in the subsequent analysis. Candidate predictors were first analyzed for collinearity and models were constructed to maintain adequate residual degrees of freedom, and avoid strongly collinear predictors. 
+
+The effects of parrotfish grazing pressure and urban influence were analyzed at the site scale, with depth included as covariate in the Pacific. In the Atlantic, only parrotfish grazing pressure was used as a predictor due to strong collinearity among predictors, partly reflecting the lower number of Atlantic sites relative to the Pacific (8 vs. 37; Table SX; Figure SXX). Environmental predictors were evaluated at the island level, with chlorophyll and aragonite saturation state considered in the Atlantic, and depth added to the two parameters in the Pacific. Temperature (satellite-derived) was not evaluated due to collinearity with aragonite saturation state and mean site depth in both basins.  
+
+## Check collinearity among parrotfish pressure, Urban Influence, and depth
+```{r loc3_predictor_collinearity_table, echo=FALSE, message=FALSE, warning=FALSE}
+
 # Build loc3 predictor dataset
 loc3_predictor_dat <- combinedTableLoc3 %>%
   select(
@@ -1936,13 +2184,16 @@ loc3_predictor_dat <- combinedTableLoc3 %>%
     meanDepth
   ) %>%
   rename(
-    `Parrotfish grazing pressure` = comm_bioerosion_mean,
-    `Urban influence` = dist_city_km,
+    `Parrotfish pressure` = comm_bioerosion_mean,
+    `Urban Influence` = dist_city_km,
     Depth = meanDepth
   ) %>%
+  mutate(
+    Basin = recode(basin, atlantic = "Atlantic", pacific = "Pacific")
+  ) %>%
   filter(
-    !is.na(`Parrotfish grazing pressure`),
-    !is.na(`Urban influence`),
+    !is.na(`Parrotfish pressure`),
+    !is.na(`Urban Influence`),
     !is.na(Depth)
   )
 
@@ -1950,123 +2201,105 @@ loc3_predictor_dat <- combinedTableLoc3 %>%
 pairwise_collinearity_dat <- bind_rows(
   loc3_predictor_dat %>%
     transmute(
-      basin, loc1, loc2, loc3,
-      comparison = "Parrotfish grazing pressure vs. urban influence",
-      x_var = "Urban influence",
-      y_var = "Parrotfish grazing pressure",
-      x = `Urban influence`,
-      y = `Parrotfish grazing pressure`
+      Basin,
+      comparison = "Parrotfish pressure vs. Urban Influence",
+      x = `Urban Influence`,
+      y = `Parrotfish pressure`
     ),
   
   loc3_predictor_dat %>%
     transmute(
-      basin, loc1, loc2, loc3,
-      comparison = "Parrotfish grazing pressure vs. depth",
-      x_var = "Depth",
-      y_var = "Parrotfish grazing pressure",
+      Basin,
+      comparison = "Parrotfish pressure vs. Depth",
       x = Depth,
-      y = `Parrotfish grazing pressure`
+      y = `Parrotfish pressure`
     ),
   
   loc3_predictor_dat %>%
     transmute(
-      basin, loc1, loc2, loc3,
-      comparison = "Urban influence vs. depth",
-      x_var = "Depth",
-      y_var = "Urban influence",
+      Basin,
+      comparison = "Urban Influence vs. Depth",
       x = Depth,
-      y = `Urban influence`
+      y = `Urban Influence`
     )
 )
 
-# Correlation table by basin and predictor pair
+# Correlation table by Basin and predictor pair
 loc3_collinearity_cor <- pairwise_collinearity_dat %>%
-  group_by(basin, comparison) %>%
+  group_by(Basin, comparison) %>%
   summarise(
     n_loc3 = n(),
     correlation = cor(x, y, use = "complete.obs"),
     p.value = cor.test(x, y)$p.value,
     .groups = "drop"
-  ) %>%
-  mutate(
-    abs_correlation = abs(correlation),
-    collinearity_flag = case_when(
-      abs_correlation >= 0.8 ~ "Very high",
-      abs_correlation >= 0.7 ~ "High",
-      abs_correlation >= 0.5 ~ "Moderate",
-      TRUE ~ "Low"
-    ),
-    label = paste0(
-      "r = ", round(correlation, 3),
-      "\np = ", signif(p.value, 3),
-      "\nn = ", n_loc3
-    )
   )
 
 # Display correlation table
 loc3_collinearity_cor %>%
-  select(
-    basin, comparison,
-    n_loc3,
-    correlation,
-    p.value,
-    collinearity_flag
+  mutate(
+    correlation = round(correlation, 3),
+    p.value = signif(p.value, 3)
   ) %>%
   kbl(
-    digits = 3,
-    caption = "Pairwise correlations among loc3-level predictors: parrotfish grazing pressure, urban influence, and depth"
+    caption = "Collinearity among loc3-level predictors by Basin",
+    col.names = c(
+      "Basin",
+      "Predictor comparison",
+      "n",
+      "Correlation",
+      "p-value"
+    )
   ) %>%
   kable_styling(
     bootstrap_options = c("striped", "hover", "condensed"),
     full_width = FALSE
   )
-
-# Combined plot: one row per predictor comparison, one column per basin
-ggplot(
-  pairwise_collinearity_dat,
-  aes(x = x, y = y, color = basin)
-) +
-  geom_point(size = 3) +
-  geom_smooth(method = "lm", se = TRUE) +
-  facet_grid(comparison ~ basin, scales = "free") +
-  geom_text(
-    data = loc3_collinearity_cor,
-    aes(x = -Inf, y = Inf, label = label),
-    inherit.aes = FALSE,
-    hjust = -0.1,
-    vjust = 1.1,
-    size = 3.5
-  ) +
-  labs(
-    x = NULL,
-    y = NULL,
-    title = "Loc3-level collinearity among model predictors",
-    subtitle = "Pairwise relationships among parrotfish grazing pressure, urban influence, and depth"
-  ) +
-  theme_bw() +
-  theme(
-    legend.position = "none",
-    strip.text = element_text(face = "bold"),
-    plot.title = element_text(face = "bold")
-  )
 ```
+
+
 
 ## Analyze response variables at the loc3 level 
  Loc3-level analysis using existing combinedTableLoc3
  Each loc3 row is one statistical replicate.
 
  Separate models are run for Atlantic and Pacific.
- Atlantic: response ~ parrotfish bioerosion only
- Pacific:  response ~ parrotfish bioerosion + distance to city + depth
+ Atlantic: response ~ parrotfish pressure only
+ Pacific:  response ~ parrotfish pressure + urban influence + depth
 ```{r combinedTableLoc3_basin_specific_models, echo=FALSE, message=FALSE, warning=FALSE}
-# Define loc3-level BAR response variables in combinedTableLoc3
-response_vars_loc3 <- c(
+# Define loc3-level BAR response variables in the desired output order
+response_vars <- c(
   "meanDeltaMass_mgcm2y",
   "meanDeltaVolume",
   "meanDeltaDensity",
-  "meanMacroboring",
   "meanAccretion",
-  "meanGrazing"
+  "meanGrazing",
+  "meanMacroboring"
+)
+
+# Response variable display labels with HTML superscripts
+response_labels <- c(
+  meanDeltaMass_mgcm2y = "Mass (mg cm<sup>-2</sup> yr<sup>-1</sup>)",
+  meanDeltaVolume      = "Volume (mm<sup>3</sup> cm<sup>-2</sup> yr<sup>-1</sup>)",
+  meanDeltaDensity     = "Density (mg cm<sup>-3</sup>cm<sup>-2</sup> yr<sup>-1</sup>)",
+  meanAccretion        = "Accretion (mm<sup>3</sup> cm<sup>-2</sup> yr<sup>-1</sup>)",
+  meanGrazing          = "Grazing (mm<sup>3</sup> cm<sup>-2</sup> yr<sup>-1</sup>)",
+  meanMacroboring      = "Macroboring (mm<sup>3</sup> cm<sup>-2</sup> yr<sup>-1</sup>)"
+)
+
+# Define model term order for the full coefficient table
+term_order <- c(
+  "(Intercept)",
+  "comm_bioerosion_mean",
+  "dist_city_km",
+  "meanDepth"
+)
+
+# Model term display labels
+term_labels <- c(
+  `(Intercept)`        = "Intercept",
+  comm_bioerosion_mean = "Parrotfish pressure",
+  dist_city_km         = "Urban influence",
+  meanDepth            = "Depth"
 )
 
 # Build model data
@@ -2076,12 +2309,15 @@ loc3_model_long <- combinedTableLoc3 %>%
     comm_bioerosion_mean,
     dist_city_km,
     meanDepth,
-    all_of(response_vars_loc3)
+    all_of(response_vars)
   ) %>%
   pivot_longer(
-    cols = all_of(response_vars_loc3),
+    cols = all_of(response_vars),
     names_to = "response",
     values_to = "mean_response"
+  ) %>%
+  mutate(
+    response = factor(response, levels = response_vars)
   ) %>%
   filter(
     basin %in% c("atlantic", "pacific"),
@@ -2107,8 +2343,8 @@ filter_model_data <- function(dat, loc3ModelBasin) {
 }
 
 # Function to fit basin-specific loc3-level models
-# Atlantic: response ~ parrotfish bioerosion only
-# Pacific:  response ~ parrotfish bioerosion + distance to city + depth
+# Atlantic: response ~ parrotfish pressure only
+# Pacific:  response ~ parrotfish pressure + urban influence + depth
 fit_loc3_lm <- function(dat, loc3ModelBasin) {
   if (loc3ModelBasin == "atlantic") {
     lm(
@@ -2161,6 +2397,10 @@ full_model_effects <- loc3_model_long %>%
     statistic = `t value`,
     p.value   = `Pr(>|t|)`
   ) %>%
+  mutate(
+    response = factor(response, levels = response_vars),
+    term = factor(term, levels = term_order)
+  ) %>%
   select(
     basin, response,
     n_loc3, n_loc2, n_loc1,
@@ -2170,81 +2410,58 @@ full_model_effects <- loc3_model_long %>%
   arrange(response, basin, term) %>%
   ungroup()
 
-# Table 1: full model effects
-full_model_effects %>%
-  select(
-    response, basin,
-    n_loc3, n_loc2, n_loc1,
-    r_squared, adj_r_squared,
-    term, estimate, std.error, statistic, p.value
-  ) %>%
-  arrange(response, basin, term) %>%
-  kbl(
-    digits = 4,
-    caption = "Full loc3-level model coefficient table using combinedTableLoc3. Atlantic models include parrotfish grazing pressure only. Pacific models include parrotfish grazing pressure, urban influence, and depth."
-  ) %>%
-  kable_styling(
-    bootstrap_options = c("striped", "hover", "condensed"),
-    full_width = FALSE
-  ) %>%
-  collapse_rows(
-    columns = 1,
-    valign = "top",
-    latex_hline = "major"
-  ) %>%
-  scroll_box(height = "500px", width = "100%")
-
-
-# Table 2: organized summary table
-organized_model_table <- full_model_effects %>%
-  filter(term != "(Intercept)") %>%
+# Create display table with formatted labels and capitalization
+full_model_effects_display <- full_model_effects %>%
   mutate(
-    term_clean = case_when(
-      term == "comm_bioerosion_mean" ~ "Grazing pressure",
-      term == "dist_city_km" ~ "Urban influence",
-      term == "meanDepth" ~ "Depth",
-      TRUE ~ term
-    ),
-    estimate_p = paste0(
-      round(estimate, 3),
-      " (p = ",
-      signif(p.value, 3),
-      ")"
-    ),
-    estimate_p = if_else(
-      p.value < 0.05,
-      paste0("<strong>", estimate_p, "</strong>"),
-      estimate_p
-    )
+    Response = response_labels[as.character(response)],
+    Basin = str_to_title(basin),
+    Term = term_labels[as.character(term)]
   ) %>%
   select(
-    response, basin,
+    Response, Basin,
     n_loc3, n_loc2, n_loc1,
     r_squared, adj_r_squared,
-    term_clean, estimate_p
+    Term, estimate, std.error, statistic, p.value
   ) %>%
-  pivot_wider(
-    names_from = term_clean,
-    values_from = estimate_p
-  ) %>%
-  arrange(response, basin)
+  rename(
+    `N loc3` = n_loc3,
+    `N loc2` = n_loc2,
+    `N loc1` = n_loc1,
+    `R-squared` = r_squared,
+    `Adjusted R-squared` = adj_r_squared,
+    Estimate = estimate,
+    `Std. Error` = std.error,
+    `t value` = statistic,
+    `p value` = p.value
+  )
 
-organized_model_table %>%
+# Identify significant non-intercept term rows
+sig_rows <- which(
+  full_model_effects$p.value < 0.05 &
+    as.character(full_model_effects$term) != "(Intercept)"
+)
+
+# Table of full model effects
+full_model_effects_display %>%
   kbl(
-    escape = FALSE,
     digits = 4,
-    caption = "Summary of basin-specific loc3-level linear models. Values are coefficient estimates with p-values. Bold values indicate p < 0.05. Atlantic models include parrotfish grazing pressure only. Pacific models include parrotfish grazing pressure, urban influence, and depth.",
-    align = "l"
+    escape = FALSE,
+    caption = "Full loc3-level model coefficient table using combinedTableLoc3. Atlantic models include parrotfish pressure only. Pacific models include parrotfish pressure, urban influence, and depth."
   ) %>%
   kable_styling(
     bootstrap_options = c("striped", "hover", "condensed"),
     full_width = FALSE
   ) %>%
+  row_spec(
+    sig_rows,
+    bold = TRUE
+  ) %>%
   collapse_rows(
     columns = 1,
     valign = "top",
     latex_hline = "major"
-  )
+  ) %>%
+  scroll_box(height = "1500px", width = "100%")
 ```
 
 
@@ -2260,6 +2477,281 @@ organized_model_table %>%
 
 
 
+
+
+
+
+
+
+```{r loc3_parrotfish_pressure_model_prediction_plots, echo=FALSE, message=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(broom)
+library(patchwork)
+
+# Responses to plot, in the requested order
+response_lookup <- tibble(
+  response_var = c("meanGrazing", "meanAccretion", "meanDeltaVolume"),
+  response_label = c("Grazing", "Accretion", "Volume")
+)
+
+y_axis_labels <- list(
+  meanGrazing = expression("Grazing (mm"^3*" cm"^-2*" yr"^-1*")"),
+  meanAccretion = expression("Accretion (mm"^3*" cm"^-2*" yr"^-1*")"),
+  meanDeltaVolume = expression("Volume (mm"^3*" cm"^-2*" yr"^-1*")")
+)
+
+# Consistent basin colors
+basin_colors <- c(
+  Atlantic = "#D55E00",
+  Pacific = "#0072B2"
+)
+
+basin_shapes <- c(
+  Atlantic = 16,
+  Pacific = 17
+)
+
+# Build long-format plotting/modeling dataset
+loc3_parrotfish_dat <- combinedTableLoc3 %>%
+  select(
+    basin, loc1, loc2, loc3,
+    comm_bioerosion_mean,
+    dist_city_km,
+    meanDepth,
+    all_of(response_lookup$response_var)
+  ) %>%
+  pivot_longer(
+    cols = all_of(response_lookup$response_var),
+    names_to = "response_var",
+    values_to = "value"
+  ) %>%
+  left_join(response_lookup, by = "response_var") %>%
+  mutate(
+    basin = str_to_title(basin)
+  ) %>%
+  filter(
+    basin %in% c("Atlantic", "Pacific"),
+    !is.na(value),
+    !is.na(comm_bioerosion_mean)
+  )
+
+# Fit basin-specific models
+# Atlantic: response ~ parrotfish pressure
+# Pacific: response ~ parrotfish pressure + urban influence + depth
+model_fits <- loc3_parrotfish_dat %>%
+  group_by(response_var, response_label, basin) %>%
+  nest() %>%
+  mutate(
+    fit = map2(
+      data,
+      basin,
+      ~ if (.y == "Atlantic") {
+        lm(value ~ comm_bioerosion_mean, data = .x)
+      } else {
+        lm(value ~ comm_bioerosion_mean + dist_city_km + meanDepth, data = .x)
+      }
+    )
+  )
+
+# Extract parrotfish-pressure p values
+parrotfish_pvals <- model_fits %>%
+  mutate(tidy_fit = map(fit, tidy)) %>%
+  select(response_var, response_label, basin, tidy_fit) %>%
+  unnest(tidy_fit) %>%
+  filter(term == "comm_bioerosion_mean") %>%
+  mutate(
+    significant = p.value < 0.05,
+    p_label = case_when(
+      p.value < 0.001 ~ paste0(basin, ": p < 0.001"),
+      TRUE ~ paste0(basin, ": p = ", formatC(p.value, format = "f", digits = 3))
+    )
+  )
+
+# Build prediction data
+# For Pacific, urban influence and depth are held constant at Pacific means
+prediction_dat <- model_fits %>%
+  mutate(
+    pred_dat = map2(
+      data,
+      basin,
+      ~ {
+        x_seq <- seq(
+          min(.x$comm_bioerosion_mean, na.rm = TRUE),
+          max(.x$comm_bioerosion_mean, na.rm = TRUE),
+          length.out = 200
+        )
+        
+        if (.y == "Atlantic") {
+          tibble(
+            comm_bioerosion_mean = x_seq
+          )
+        } else {
+          tibble(
+            comm_bioerosion_mean = x_seq,
+            dist_city_km = mean(.x$dist_city_km, na.rm = TRUE),
+            meanDepth = mean(.x$meanDepth, na.rm = TRUE)
+          )
+        }
+      }
+    ),
+    predictions = map2(
+      fit,
+      pred_dat,
+      ~ bind_cols(
+        .y,
+        as_tibble(
+          predict(
+            .x,
+            newdata = .y,
+            interval = "confidence",
+            level = 0.95
+          )
+        )
+      )
+    )
+  ) %>%
+  select(response_var, response_label, basin, predictions) %>%
+  unnest(predictions) %>%
+  left_join(
+    parrotfish_pvals %>%
+      select(response_var, basin, significant),
+    by = c("response_var", "basin")
+  ) %>%
+  filter(significant)
+
+# Fixed p-value label positions in lower right so they do not overlap
+label_dat <- parrotfish_pvals %>%
+  left_join(
+    loc3_parrotfish_dat %>%
+      group_by(response_var, response_label) %>%
+      summarize(
+        x_min = min(comm_bioerosion_mean, na.rm = TRUE),
+        x_max = max(comm_bioerosion_mean, na.rm = TRUE),
+        .groups = "drop"
+      ),
+    by = c("response_var", "response_label")
+  ) %>%
+  mutate(
+    x = x_max - 0.02 * (x_max - x_min),
+    basin = factor(basin, levels = c("Atlantic", "Pacific"))
+  ) %>%
+  arrange(response_var, basin) %>%
+  group_by(response_var, response_label) %>%
+  mutate(
+    y = case_when(
+      row_number() == 1 ~ -75,
+      row_number() == 2 ~ -90,
+      TRUE ~ -90
+    )
+  ) %>%
+  ungroup()
+
+# Plotting function
+plot_response <- function(response_var_name) {
+  
+  response_title <- response_lookup %>%
+    filter(response_var == response_var_name) %>%
+    pull(response_label)
+  
+  y_lab <- y_axis_labels[[response_var_name]]
+  
+  point_dat <- loc3_parrotfish_dat %>%
+    filter(response_var == response_var_name)
+  
+  line_dat <- prediction_dat %>%
+    filter(response_var == response_var_name)
+  
+  label_subdat <- label_dat %>%
+    filter(response_var == response_var_name)
+  
+  ggplot() +
+    geom_hline(
+      yintercept = 0,
+      linetype = "dashed",
+      color = "black",
+      linewidth = 0.6
+    ) +
+    geom_point(
+      data = point_dat,
+      aes(
+        x = comm_bioerosion_mean,
+        y = value,
+        color = basin,
+        shape = basin
+      ),
+      size = 2.6,
+      alpha = 0.80
+    ) +
+    geom_ribbon(
+      data = line_dat,
+      aes(
+        x = comm_bioerosion_mean,
+        ymin = lwr,
+        ymax = upr,
+        fill = basin,
+        group = basin
+      ),
+      alpha = 0.18,
+      color = NA
+    ) +
+    geom_line(
+      data = line_dat,
+      aes(
+        x = comm_bioerosion_mean,
+        y = fit,
+        color = basin,
+        group = basin
+      ),
+      linewidth = 1
+    ) +
+    geom_label(
+      data = label_subdat,
+      aes(
+        x = x,
+        y = y,
+        label = p_label,
+        color = basin
+      ),
+      hjust = 1,
+      vjust = 0,
+      size = 3,
+      label.size = NA,
+      fill = "white",
+      alpha = 0.85,
+      show.legend = FALSE
+    ) +
+    scale_color_manual(values = basin_colors) +
+    scale_fill_manual(values = basin_colors) +
+    scale_shape_manual(values = basin_shapes) +
+    coord_cartesian(ylim = c(-100, 50)) +
+    scale_y_continuous(breaks = seq(-100, 50, by = 25)) +
+    labs(
+      x = "Parrotfish pressure",
+      y = y_lab,
+      title = response_title,
+      color = "Basin",
+      fill = "Basin",
+      shape = "Basin"
+    ) +
+    theme_classic() +
+    theme(
+      plot.title = element_text(face = "bold", hjust = 0.5),
+      panel.border = element_rect(color = "black", fill = NA),
+      legend.position = "bottom"
+    )
+}
+
+# Build plots in requested order
+grazing_plot <- plot_response("meanGrazing")
+accretion_plot <- plot_response("meanAccretion")
+volume_plot <- plot_response("meanDeltaVolume")
+
+# Arrange panels
+grazing_plot + accretion_plot + volume_plot +
+  plot_layout(ncol = 3, guides = "collect") &
+  theme(legend.position = "bottom")
+```
 
 
 
@@ -2278,8 +2770,8 @@ This is what ChatGPT told me about removing depth (don't use):
 "Depth was not a predictor of interest, it did not improve interpretation, and including it costs degrees of freedom in a small loc2-level dataset."
 
 
-##Are predictors collinear
-```{r loc2_environmental_predictor_collinearity_plots, echo=FALSE, message=FALSE, warning=FALSE}
+## Are loc2 environmental predictors collinear?
+```{r loc2_environmental_predictor_collinearity_table, echo=FALSE, message=FALSE, warning=FALSE}
 # Build loc2 predictor dataset
 loc2_predictor_dat <- combinedTableLoc2 %>%
   select(
@@ -2296,6 +2788,7 @@ loc2_predictor_dat <- combinedTableLoc2 %>%
     Omega = mean_AragSatState
   ) %>%
   filter(
+    basin %in% c("atlantic", "pacific"),
     !is.na(Chlorophyll),
     !is.na(Temperature),
     !is.na(Depth),
@@ -2308,58 +2801,46 @@ pairwise_collinearity_dat <- bind_rows(
     transmute(
       basin, loc1, loc2,
       comparison = "Omega vs. Chlorophyll",
-      x_var = "Chlorophyll",
-      y_var = "Omega",
       x = Chlorophyll,
       y = Omega
     ),
-  
+
   loc2_predictor_dat %>%
     transmute(
       basin, loc1, loc2,
       comparison = "Omega vs. Temperature",
-      x_var = "Temperature",
-      y_var = "Omega",
       x = Temperature,
       y = Omega
     ),
-  
+
   loc2_predictor_dat %>%
     transmute(
       basin, loc1, loc2,
       comparison = "Omega vs. Depth",
-      x_var = "Depth",
-      y_var = "Omega",
       x = Depth,
       y = Omega
     ),
-  
+
   loc2_predictor_dat %>%
     transmute(
       basin, loc1, loc2,
       comparison = "Chlorophyll vs. Temperature",
-      x_var = "Temperature",
-      y_var = "Chlorophyll",
       x = Temperature,
       y = Chlorophyll
     ),
-  
+
   loc2_predictor_dat %>%
     transmute(
       basin, loc1, loc2,
       comparison = "Chlorophyll vs. Depth",
-      x_var = "Depth",
-      y_var = "Chlorophyll",
       x = Depth,
       y = Chlorophyll
     ),
-  
+
   loc2_predictor_dat %>%
     transmute(
       basin, loc1, loc2,
       comparison = "Temperature vs. Depth",
-      x_var = "Depth",
-      y_var = "Temperature",
       x = Depth,
       y = Temperature
     )
@@ -2369,85 +2850,81 @@ pairwise_collinearity_dat <- bind_rows(
 loc2_collinearity_cor <- pairwise_collinearity_dat %>%
   group_by(basin, comparison) %>%
   summarise(
-    n_loc2 = n(),
+    n = n(),
     correlation = cor(x, y, use = "complete.obs"),
     p.value = cor.test(x, y)$p.value,
     .groups = "drop"
   ) %>%
   mutate(
-    abs_correlation = abs(correlation),
-    collinearity_flag = case_when(
-      abs_correlation >= 0.8 ~ "Very high",
-      abs_correlation >= 0.7 ~ "High",
-      abs_correlation >= 0.5 ~ "Moderate",
-      TRUE ~ "Low"
-    ),
-    label = paste0(
-      "r = ", round(correlation, 3),
-      "\np = ", signif(p.value, 3),
-      "\nn = ", n_loc2
-    )
-  )
+    Basin = str_to_title(basin),
+    Comparison = comparison
+  ) %>%
+  select(
+    Basin,
+    Comparison,
+    n,
+    correlation,
+    p.value
+  ) %>%
+  rename(
+    Correlation = correlation,
+    `p value` = p.value
+  ) %>%
+  arrange(Comparison, Basin)
 
 # Display correlation table
 loc2_collinearity_cor %>%
-  select(
-    basin, comparison,
-    n_loc2,
-    correlation,
-    p.value,
-    collinearity_flag
-  ) %>%
   kbl(
     digits = 3,
-    caption = "Pairwise correlations among loc2-level environmental predictors"
+    caption = "Pairwise correlations among loc2-level environmental predictors."
   ) %>%
   kable_styling(
     bootstrap_options = c("striped", "hover", "condensed"),
     full_width = FALSE
-  )
-
-# Combined plot: one row per predictor comparison, one column per basin
-ggplot(
-  pairwise_collinearity_dat,
-  aes(x = x, y = y, color = basin)
-) +
-  geom_point(size = 3) +
-  geom_smooth(method = "lm", se = TRUE) +
-  facet_grid(comparison ~ basin, scales = "free") +
-  geom_text(
-    data = loc2_collinearity_cor,
-    aes(x = -Inf, y = Inf, label = label),
-    inherit.aes = FALSE,
-    hjust = -0.1,
-    vjust = 1.1,
-    size = 3.2
-  ) +
-  labs(
-    x = NULL,
-    y = NULL,
-    title = "Loc2-level collinearity among environmental model predictors",
-    subtitle = "Pairwise relationships among omega, chlorophyll, temperature, and depth"
-  ) +
-  theme_bw() +
-  theme(
-    legend.position = "none",
-    strip.text = element_text(face = "bold"),
-    plot.title = element_text(face = "bold")
+  ) %>%
+  collapse_rows(
+    columns = 1,
+    valign = "top",
+    latex_hline = "major"
   )
 ```
 
-## Analyze response variables at the loc2 level 
+## Analyze response variables at the loc2 level
 ```{r lmLoc2ByBasinChlorophyllOmegaDepth_cleanTables, echo=FALSE, message=FALSE, warning=FALSE}
-
-# Define loc2-level BAR response variables
+# Define loc2-level BAR response variables in the desired output order
 response_vars <- c(
   "meanDeltaMass_mgcm2y",
   "meanDeltaVolume",
   "meanDeltaDensity",
-  "meanMacroboring",
+  "meanAccretion",
   "meanGrazing",
-  "meanAccretion"
+  "meanMacroboring"
+)
+
+# Response variable display labels with HTML superscripts
+response_labels <- c(
+  meanDeltaMass_mgcm2y = "Mass (mg cm<sup>-2</sup> yr<sup>-1</sup>)",
+  meanDeltaVolume      = "Volume (mm<sup>3</sup> cm<sup>-2</sup> yr<sup>-1</sup>)",
+  meanDeltaDensity     = "Density (mg cm<sup>-3</sup>)",
+  meanAccretion        = "Accretion (mm<sup>3</sup> cm<sup>-2</sup> yr<sup>-1</sup>)",
+  meanGrazing          = "Grazing (mm<sup>3</sup> cm<sup>-2</sup> yr<sup>-1</sup>)",
+  meanMacroboring      = "Macroboring (mm<sup>3</sup> cm<sup>-2</sup> yr<sup>-1</sup>)"
+)
+
+# Define model term order for the full coefficient table
+term_order_loc2 <- c(
+  "(Intercept)",
+  "mean_AragSatState",
+  "meanChlorophyll",
+  "meanDepth"
+)
+
+# Model term display labels
+term_labels_loc2 <- c(
+  `(Intercept)`       = "Intercept",
+  mean_AragSatState   = "Omega",
+  meanChlorophyll     = "Chlorophyll",
+  meanDepth           = "Depth"
 )
 
 # Put the data in long format where "response" is the name of the response variable
@@ -2464,6 +2941,9 @@ model_dat_long <- combinedTableLoc2 %>%
     cols = all_of(response_vars),
     names_to = "response",
     values_to = "value"
+  ) %>%
+  mutate(
+    response = factor(response, levels = response_vars)
   ) %>%
   filter(
     basin %in% c("atlantic", "pacific"),
@@ -2514,7 +2994,7 @@ fit_loc2_lm <- function(dat, loc2ModelBasin) {
 # Function to extract model coefficients and model fit statistics
 extract_lm_effects <- function(dat, loc2ModelBasin) {
   model_summary <- summary(fit_loc2_lm(dat, loc2ModelBasin))
-  
+
   as.data.frame(model_summary$coefficients) %>%
     rownames_to_column("term") %>%
     as_tibble() %>%
@@ -2525,7 +3005,7 @@ extract_lm_effects <- function(dat, loc2ModelBasin) {
 }
 
 # Fit models and create full coefficient table
-full_model_effects <- model_dat_long %>%
+full_model_effects_loc2 <- model_dat_long %>%
   group_by(basin, response) %>%
   nest() %>%
   mutate(
@@ -2546,8 +3026,12 @@ full_model_effects <- model_dat_long %>%
     statistic = `t value`,
     p.value   = `Pr(>|t|)`
   ) %>%
+  mutate(
+    response = factor(response, levels = response_vars),
+    term = factor(term, levels = term_order_loc2)
+  ) %>%
   select(
-    response, basin,
+    basin, response,
     n_loc2, n_loc1,
     r_squared, adj_r_squared,
     term, estimate, std.error, statistic, p.value
@@ -2555,72 +3039,56 @@ full_model_effects <- model_dat_long %>%
   arrange(response, basin, term) %>%
   ungroup()
 
-# Table 1: full model effects
-full_model_effects %>%
+# Create display table with formatted labels and capitalization
+full_model_effects_loc2_display <- full_model_effects_loc2 %>%
+  mutate(
+    Response = response_labels[as.character(response)],
+    Basin = str_to_title(basin),
+    Term = term_labels_loc2[as.character(term)]
+  ) %>%
+  select(
+    Response, Basin,
+    n_loc2, n_loc1,
+    r_squared, adj_r_squared,
+    Term, estimate, std.error, statistic, p.value
+  ) %>%
+  rename(
+    `N loc2` = n_loc2,
+    `N loc1` = n_loc1,
+    `R-squared` = r_squared,
+    `Adjusted R-squared` = adj_r_squared,
+    Estimate = estimate,
+    `Std. Error` = std.error,
+    `t value` = statistic,
+    `p value` = p.value
+  )
+
+# Identify significant non-intercept term rows
+sig_rows <- which(
+  full_model_effects_loc2$`p.value` < 0.05 &
+    as.character(full_model_effects_loc2$term) != "(Intercept)"
+)
+
+# Full model effects table
+full_model_effects_loc2_display %>%
   kbl(
     digits = 4,
+    escape = FALSE,
     caption = "Full loc2-level model coefficient table using combinedTableLoc2. Atlantic models include omega and chlorophyll. Pacific models include omega, chlorophyll, and depth."
   ) %>%
   kable_styling(
     bootstrap_options = c("striped", "hover", "condensed"),
     full_width = FALSE
   ) %>%
-  collapse_rows(
-    columns = 1,
-    valign = "top",
-    latex_hline = "major"
-  ) %>%
-  scroll_box(height = "500px", width = "100%")
-
-# Table 2: organized model summary table
-organized_model_table <- full_model_effects %>%
-  filter(term != "(Intercept)") %>%
-  mutate(
-    term_clean = case_when(
-      term == "mean_AragSatState" ~ "Omega",
-      term == "meanChlorophyll" ~ "Chlorophyll",
-      term == "meanDepth" ~ "Depth",
-      TRUE ~ term
-    ),
-    estimate_p = paste0(
-      round(estimate, 3),
-      " (p = ",
-      signif(p.value, 3),
-      ")"
-    ),
-    estimate_p = if_else(
-      p.value < 0.05,
-      paste0("<strong>", estimate_p, "</strong>"),
-      estimate_p
-    )
-  ) %>%
-  select(
-    response, basin,
-    n_loc2, n_loc1,
-    r_squared, adj_r_squared,
-    term_clean, estimate_p
-  ) %>%
-  pivot_wider(
-    names_from = term_clean,
-    values_from = estimate_p
-  ) %>%
-  arrange(response, basin)
-
-organized_model_table %>%
-  kbl(
-    escape = FALSE,
-    digits = 4,
-    caption = "Summary of basin-specific loc2-level linear models. Values are coefficient estimates with p-values. Bold values indicate p < 0.05. Atlantic models include omega and chlorophyll. Pacific models include omega, chlorophyll, and depth.",
-    align = "l"
-  ) %>%
-  kable_styling(
-    bootstrap_options = c("striped", "hover", "condensed"),
-    full_width = FALSE
+  row_spec(
+    sig_rows,
+    bold = TRUE
   ) %>%
   collapse_rows(
     columns = 1,
     valign = "top",
     latex_hline = "major"
-  )
+  ) %>%
+  scroll_box(height = "1500px", width = "100%")
 ```
 
